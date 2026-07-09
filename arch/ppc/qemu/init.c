@@ -256,6 +256,13 @@ push_physaddr(phys_addr_t value)
 /* From drivers/timer.c */
 extern unsigned long timer_freq;
 
+/* Number of CPUs being started; set once in ppc_init() below. Used by
+ * cpu_g4_init() to know whether it should finish the OF device node
+ * itself (single CPU, original behaviour) or leave that to the caller,
+ * which needs to add per-CPU SMP properties first (see ppc_init()).
+ */
+static int g_num_cpus = 1;
+
 static void
 cpu_generic_init(const struct cpudef *cpu)
 {
@@ -381,9 +388,18 @@ static void
 cpu_g4_init(const struct cpudef *cpu)
 {
     cpu_generic_init(cpu);
-    cpu_add_pir_property();
 
-    fword("finish-device");
+    if (g_num_cpus == 1) {
+        /* Original single-CPU behaviour: identify via PIR and close
+         * the device node here. */
+        cpu_add_pir_property();
+        fword("finish-device");
+    }
+    /*
+     * For SMP (g_num_cpus > 1), the caller (ppc_init()) adds an
+     * explicit index-based "reg" property, the SMP GPIO/state
+     * properties, and closes the device itself once per CPU.
+     */
 }
 
 #ifdef CONFIG_PPC_64BITSUPPORT
@@ -1074,8 +1090,88 @@ arch_of_init(void)
     fword("property");
 
     cpu = id_cpu();
-    cpu->initfn(cpu);
-    printk("CPU type %s\n", cpu->name);
+
+    /*
+     * SMP is currently only wired up for the mac99 NewWorld G4 CPUs,
+     * matching the KeyLargo GPIO CPU-reset lines added on the QEMU side
+     * (hw/misc/macio/gpio.c, hw/ppc/mac_newworld.c). Non-G4 cpudefs
+     * (cpu_g4_init isn't their initfn) still get exactly one CPU node,
+     * regardless of -smp, since their initfn always finishes the device
+     * itself and has no SMP-aware property handling below.
+     */
+    g_num_cpus = (cpu->initfn == cpu_g4_init) ?
+                 fw_cfg_read_i32(FW_CFG_NB_CPUS) : 1;
+
+    for (int i = 0; i < g_num_cpus; i++) {
+        cpu->initfn(cpu);
+
+        if (g_num_cpus > 1) {
+            PUSH(i);
+            fword("encode-int");
+            push_str("reg");
+            fword("property");
+
+            push_str(i == 0 ? "running" : "off");
+            fword("encode-string");
+            push_str("state");
+            fword("property");
+
+            if (is_newworld()) {
+                phandle_t gpio_ph;
+
+                gpio_ph = find_dev("mac-io/gpio");
+                if (!gpio_ph) {
+                    gpio_ph = find_dev("/pci@f2000000/mac-io/gpio");
+                }
+                if (gpio_ph) {
+                    /*
+                     * KeyLargo GPIO register offsets for each CPU's
+                     * soft-reset line; must match KL_GPIO_RESET_CPUn
+                     * in hw/misc/macio/gpio.h.
+                     */
+                    static const uint32_t soft_reset_gpio[4] = {
+                        0x5b, 0x5c, 0x67, 0x68
+                    };
+                    uint32_t reset_offset = soft_reset_gpio[i < 4 ? i : 1];
+
+                    PUSH(gpio_ph);
+                    fword("encode-int");
+                    push_str("gpio-parent");
+                    fword("property");
+
+                    PUSH(reset_offset);
+                    fword("encode-int");
+                    push_str("soft-reset");
+                    fword("property");
+
+                    PUSH(0x01);
+                    fword("encode-int");
+                    push_str("gpio-mask");
+                    fword("property");
+
+                    PUSH(0x01);
+                    fword("encode-int");
+                    push_str("gpio-value");
+                    fword("property");
+
+                    if (i > 0) {
+                        PUSH(0x73);
+                        fword("encode-int");
+                        push_str("timebase-enable");
+                        fword("property");
+                    }
+                }
+            }
+
+            fword("finish-device");
+        }
+    }
+
+    printk("CPU type %s", cpu->name);
+    if (g_num_cpus > 1) {
+        printk(" x%d (SMP)", g_num_cpus);
+    }
+    printk("\n");
 
     snprintf(buf, sizeof(buf), "/cpus/%s", cpu->name);
     ofmem_register(find_dev("/memory"), find_dev(buf));
