@@ -89,7 +89,8 @@ static const char *wordnames[] = {
 	"here", "here!", "dobranch", "do?branch", "unaligned-w@",
 	"unaligned-w!", "unaligned-l@", "unaligned-l!", "ioc@", "iow@",
 	"iol@", "ioc!", "iow!", "iol!", "i", "j", "call", "sys-debug",
-	"$include", "$encode-file", "(debug", "(debug-off)"
+	"$include", "$encode-file", "(debug", "(debug-off)",
+	"end0", "end1"
 };
 
 /*

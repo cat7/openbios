@@ -82,10 +82,15 @@
 ;
 
 
+0 value rage128dbg-mstr
+0 value rage128dbg-mlen
+
 : $call-method  ( ... method-str method-len ihandle -- ??? )
+  2 pick 2 pick to rage128dbg-mlen to rage128dbg-mstr
   dup >r >in.device-node @ find-method if
     r> call-package
   else
+    ." [RAGE128DBG] $call-method: method not found: " rage128dbg-mstr rage128dbg-mlen type cr
     -21 throw
   then
 ;

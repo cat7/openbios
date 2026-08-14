@@ -829,6 +829,17 @@ do_debug_off(void)
     }
 }
 
+/* FCode end tokens */
+static void fcode_end0(void)
+{
+    /* FCode END0 token (0x00) - terminates FCode execution */
+}
+
+static void fcode_end1(void)
+{
+    /* FCode END1 token (0xFF) - terminates FCode execution */
+}
+
 /*
  * Forth primitives needed to set up
  * all the words described in IEEE1275-1994.
@@ -1963,4 +1974,6 @@ static forth_word * const words[] = {
     do_encode_file,         /* $encode-file */
     do_debug_xt,            /* (debug  */
     do_debug_off,           /* (debug-off) */
+    fcode_end0,             /* end0 */
+    fcode_end1              /* end1 */
 };

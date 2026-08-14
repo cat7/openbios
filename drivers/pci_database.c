@@ -246,6 +246,23 @@ static const pci_dev_t vga_devices[] = {
         NULL, NULL,
     },
     {
+        /* Real PowerMac3,4 "Nexus" PCI card ID -- was previously
+         * missing here entirely, so any device reporting it fell
+         * through to bad_device (see pci_find_device's "Cannot
+         * manage" printk) and config_cb never got associated with
+         * it, regardless of what vga_iface's class-code-level
+         * fallback might otherwise have provided. Despite the
+         * PCI_DEVICE_ID_ATI_RAGE128PRO macro name, 0x5245 ("RE") is
+         * actually ATI's ID for the non-Pro Rage 128 (GL/SG family);
+         * the genuinely-Pro IDs are the "P"-prefixed ones (0x5041-
+         * 0x5052), including PCI_DEVICE_ID_ATI_RAGE128_PF (0x5046)
+         * above. Named plainly here to match reality. */
+        PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_RAGE128PRO,
+        NULL, "ATY",      "ATY Rage128", "VGA\0",
+        0, 0, 0,
+        NULL, NULL,
+    },
+    {
         PCI_VENDOR_ID_QEMU, PCI_DEVICE_ID_QEMU_VGA,
         NULL, "QEMU,VGA", "QEMU VGA",    "VGA\0",
         0, 0, 0,
