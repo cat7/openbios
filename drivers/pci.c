@@ -378,11 +378,17 @@ static ucell ob_pci_map(uint32_t ba, ucell size) {
 			ba & ~mask);
 	
 #if defined(CONFIG_OFMEM)
-	ofmem_claim_phys(phys, size, 0);
+	if (ofmem_claim_phys(phys, size, 0) == -1) {
+		PCI_DPRINTF("ob_pci_map: phys claim failed (may be ok if already claimed)\n");
+	}
 
 #if defined(CONFIG_PPC)
 	/* For some reason PPC gets upset when virt != phys for map-in... */
 	virt = ofmem_claim_virt(phys, size, 0);
+	if (virt == (ucell)-1) {
+		PCI_DPRINTF("ob_pci_map: virt claim failed, using phys directly\n");
+		virt = phys;
+	}
 #else
 	virt = ofmem_claim_virt(-1, size, size);
 #endif
@@ -454,12 +460,63 @@ ob_pci_dma_sync(int *idx)
     call_parent_method("dma-sync");
 }
 
+static void
+ob_pci_bus_map_out(int *idx)
+{
+	ucell size = POP();
+	ucell virt = POP();
+
+	PCI_DPRINTF("ob_pci_bus_map_out idx=%p\n", idx);
+
+	ob_pci_unmap(virt, size);
+}
+
+/*
+ * config-b@/config-b! ( config-addr -- byte | byte config-addr -- )
+ * A PCI card's own FCode calls these directly (via $call-parent) to
+ * poke its own config space -- e.g. flipping command-register bits --
+ * without going through a config_cb. config-addr packs bus/dev/fn in
+ * the high bits and the config register offset in the low byte, the
+ * same packed form pci_config_read8/write8 elsewhere in this file
+ * already expect.
+ */
+static void
+ob_pci_config_read8(int *idx)
+{
+	cell hi = POP();
+	pci_addr addr = PCI_ADDR(PCI_BUS(hi), PCI_DEV(hi), PCI_FN(hi));
+	uint8_t val = pci_config_read8(addr, hi & 0xff);
+	PUSH(val);
+}
+
+static void
+ob_pci_config_write8(int *idx)
+{
+	cell hi = POP();
+	pci_addr addr = PCI_ADDR(PCI_BUS(hi), PCI_DEV(hi), PCI_FN(hi));
+	cell val = POP();
+	pci_config_write8(addr, hi & 0xff, val & 0xff);
+}
+
 NODE_METHODS(ob_pci_bus_node) = {
 	{ "open",		ob_pci_open		},
 	{ "close",		ob_pci_close		},
 	{ "decode-unit",	ob_pci_decode_unit	},
 	{ "encode-unit",	ob_pci_encode_unit	},
-	{ "pci-map-in",		ob_pci_bus_map_in	},
+	/*
+	 * Real IEEE1275 PCI bus binding method name -- verified live against
+	 * the real Rage 128 Pro ROM's own FCode (which calls exactly
+	 * "map-in"/"map-out" via $call-parent), and this tree's own
+	 * drivers/vga.fs (map-fb/map-mmio also call "map-in", not
+	 * "pci-map-in"). Was registered under the wrong name "pci-map-in"
+	 * here, which no real caller ever asks for -- any FCode trying to
+	 * map its own BAR hit an undefined method and aborted with a
+	 * Forth exception.
+	 */
+	{ "map-in",		ob_pci_bus_map_in	},
+	{ "map-out",		ob_pci_bus_map_out	},
+	{ "config-b@",		ob_pci_config_read8	},
+	{ "config-b!",		ob_pci_config_write8	},
 	{ "dma-alloc",		ob_pci_dma_alloc	},
 	{ "dma-free",		ob_pci_dma_free		},
 	{ "dma-map-in",		ob_pci_dma_map_in	},
@@ -473,7 +530,14 @@ static void
 ob_pci_bridge_map_in(int *idx)
 {
 	/* As per the IEEE-1275 PCI specification, chain up to the parent */
-	call_parent_method("pci-map-in");
+	call_parent_method("map-in");
+}
+
+static void
+ob_pci_bridge_map_out(int *idx)
+{
+	/* As per the IEEE-1275 PCI specification, chain up to the parent */
+	call_parent_method("map-out");
 }
 
 NODE_METHODS(ob_pci_bridge_node) = {
@@ -481,7 +545,8 @@ NODE_METHODS(ob_pci_bridge_node) = {
 	{ "close",		ob_pci_close		},
 	{ "decode-unit",	ob_pci_decode_unit	},
 	{ "encode-unit",	ob_pci_encode_unit	},
-	{ "pci-map-in",		ob_pci_bridge_map_in	},
+	{ "map-in",		ob_pci_bridge_map_in	},
+	{ "map-out",		ob_pci_bridge_map_out	},
 	{ "dma-alloc",		ob_pci_dma_alloc	},
 	{ "dma-free",		ob_pci_dma_free		},
 	{ "dma-map-in",		ob_pci_dma_map_in	},
@@ -1090,25 +1155,6 @@ static const unsigned char *find_fcode_rom(unsigned long rom, uint32_t rom_size)
         return p + pcir_off + ds_len;
 }
 
-/*
- * Executing a card's real FCode driver inline, here, during PCI probe
- * was tried and hangs (verified live: no crash, timebase advancing,
- * PC cycling through ordinary dictionary-search code for minutes with
- * no framebuffer ever initialized -- real hardware and the real Apple
- * ROM never take anywhere near that long). Cause not fully understood;
- * deferring to boot-command, after probe-all has fully completed and
- * right before the (also deferred) boot, sidesteps whatever probe-time
- * state the inline attempt was tripping over. This mirrors how a real
- * card's FCode is normally expected to run: as part of a full "open"
- * of the device, not synchronously inside its own config callback.
- */
-static struct {
-        int found;
-        unsigned long rom_addr;
-        uint32_t rom_size;
-        uint32_t fcode_offset;
-        char device_path[256];
-} ati_rom_deferred = { 0 };
 #endif
 
 int vga_config_cb (const pci_config_t *config)
@@ -1130,7 +1176,7 @@ int vga_config_cb (const pci_config_t *config)
 
                     bar = pci_config_read32(config->dev, PCI_ROM_ADDRESS);
                     bar |= PCI_ROM_ADDRESS_ENABLE;
-                    pci_config_write32(config->dev, PCI_COMMAND, bar);
+                    pci_config_write32(config->dev, PCI_ROM_ADDRESS, bar);
                     ph = get_cur_dev();
 
                     if (rom_size >= 8) {
@@ -1150,13 +1196,38 @@ int vga_config_cb (const pci_config_t *config)
 
                     fcode_rom = find_fcode_rom(rom, rom_size);
                     if (fcode_rom) {
-                            ati_rom_deferred.found = 1;
-                            ati_rom_deferred.rom_addr = rom;
-                            ati_rom_deferred.rom_size = rom_size;
-                            ati_rom_deferred.fcode_offset = fcode_rom - (const unsigned char *)rom;
-                            strncpy(ati_rom_deferred.device_path, config->path,
-                                   sizeof(ati_rom_deferred.device_path) - 1);
-                            ati_rom_deferred.device_path[sizeof(ati_rom_deferred.device_path) - 1] = '\0';
+                            /*
+                             * Run the card's own FCode inline, right here,
+                             * synchronously, during PCI probe -- while the
+                             * device node new-device opened is still
+                             * "active" and its dn.methods wordlist is the
+                             * live compile target (see external in
+                             * forth/device/device.fs). This is required
+                             * for the FCode's own `: dimensions ... ;`
+                             * style method definitions (dimensions,
+                             * set-colors, fill-rectangle, get-key-map,
+                             * etc.) to actually land in this node's own
+                             * method table where $call-method/find-method
+                             * can discover them -- deferring this to a
+                             * later boot-command (open-dev-based) runs
+                             * outside that compilation context, so those
+                             * definitions silently missed their node
+                             * (live-diagnosed 2026-08-14: every one of
+                             * them failed "method not found" at runtime
+                             * even though byte-load itself completed
+                             * without exception).
+                             *
+                             * An earlier attempt at inline execution
+                             * hung; that was before the PCI_ROM_ADDRESS
+                             * register-write bug and the missing
+                             * config-b@/config-b! NODE_METHODS were found
+                             * and fixed, and is presumed to have been one
+                             * of those, not something inherent to running
+                             * inline.
+                             */
+                            PUSH(pointer2cell(fcode_rom));
+                            PUSH(1);
+                            fword("byte-load");
                     }
             }
 #endif
@@ -1168,9 +1239,8 @@ int vga_config_cb (const pci_config_t *config)
                     /* No real FCode ROM present (e.g. QEMU's own generic
                      * std-vga), or none found -- fall back to the
                      * hardcoded generic driver, as before. A card with a
-                     * real FCode ROM gets it deferred to boot-command
-                     * instead (see ati_rom_deferred above), so this
-                     * fallback is skipped for it here.
+                     * real FCode ROM runs it inline above instead, so
+                     * this fallback is skipped for it here.
                      */
                     feval("['] vga-driver-fcode 2 cells + 1 byte-load");
             }
@@ -2377,51 +2447,6 @@ int ob_pci_init(void)
     /* configure the host bridge interrupt map */
     intc = ob_pci_host_set_interrupt_map(phandle_host);
     ob_pci_bus_set_interrupt_map(phandle_host, intc, ob_pci_host_bus_interrupt);
-
-#ifdef CONFIG_PPC
-    /*
-     * A card's real FCode driver was found during probe (see
-     * vga_config_cb's ati_rom_deferred comment for why this is
-     * deferred rather than run inline). Copy the ROM somewhere it
-     * will survive until boot-command runs -- probe-all's own scratch
-     * usage of low memory doesn't persist that long -- and arrange
-     * for boot-command to open the device (so the FCode runs with a
-     * real instance active, as "open" would give it) and byte-load
-     * the FCode from the copy before continuing to boot.
-     */
-    if (ati_rom_deferred.found) {
-        /*
-         * A hardcoded scratch physical address was tried here first
-         * and hung USB root-hub polling -- verified live, reproduced
-         * only with this device present, not with a plain machine --
-         * almost certainly because it collided with real state
-         * (probably a USB controller's own DMA descriptors) already
-         * living at that address. ofmem_malloc() is the same real
-         * allocator every other dynamic OpenBIOS allocation on this
-         * arch uses (see ofmem_common.c), so it can't collide with
-         * anything else already claimed.
-         */
-        unsigned long load_base = (unsigned long)ofmem_malloc(ati_rom_deferred.rom_size);
-        char boot_cmd[512];
-
-        if (load_base) {
-            memcpy((void *)load_base, (void *)ati_rom_deferred.rom_addr,
-                  ati_rom_deferred.rom_size);
-
-            snprintf(boot_cmd, sizeof(boot_cmd),
-                     "\" %s\" open-dev dup 0= if drop boot then "
-                     "to my-self "
-                     "%lx 1 byte-load "
-                     "boot",
-                     ati_rom_deferred.device_path,
-                     load_base + ati_rom_deferred.fcode_offset);
-
-            push_str(boot_cmd);
-            push_str("boot-command");
-            fword("$setenv");
-        }
-    }
-#endif
 
     return 0;
 }

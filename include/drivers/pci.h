@@ -194,6 +194,14 @@ extern const pci_arch_t *arch;
 
 #define PCI_VENDOR_ID_ATI                0x1002
 #define PCI_DEVICE_ID_ATI_RAGE128_PF     0x5046
+/*
+ * Real PowerMac3,4 "Nexus" PCI Rage 128 Pro card ID -- verified live
+ * against the real dumped expansion ROM (ati_ret_nexus128_103_pci_full.rom,
+ * PCIR Data Structure device field = 0x5245), matching this project's
+ * ati-rage128-pro QEMU device model. Distinct from the AGP-card
+ * PCI_DEVICE_ID_ATI_RAGE128_PF (0x5046) above.
+ */
+#define PCI_DEVICE_ID_ATI_RAGE128PRO     0x5245
 
 #define PCI_VENDOR_ID_DEC                0x1011
 #define PCI_DEVICE_ID_DEC_21154          0x0026

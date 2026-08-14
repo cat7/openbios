@@ -58,21 +58,27 @@ defer (poke)
 \ 5.3.7.2 Device-register access
 
 : rb@    ( addr -- byte )
+  ioc@
   ;
-  
+
 : rw@    ( waddr -- w )
+  iow@
   ;
-  
+
 : rl@    ( qaddr -- quad )
+  iol@
   ;
-  
+
 : rb!    ( byte addr -- )
+  ioc!
   ;
-  
+
 : rw!    ( w waddr -- )
+  iow!
   ;
-  
+
 : rl!    ( quad qaddr -- )
+  iol!
   ;
 
 : rx@ ( oaddr - o )
