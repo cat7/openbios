@@ -1041,12 +1041,83 @@ int macio_keylargo_config_cb (const pci_config_t *config)
         return 0;
 }
 
+#ifdef CONFIG_PPC
+/*
+ * Real PCI expansion ROMs (any code type) start with the standard
+ * PCI Firmware Specification header: signature 0x55 0xAA at offset 0,
+ * then a pointer at offset 0x18 (little-endian) to a "PCIR" PCI Data
+ * Structure. That structure's Code Type byte (offset 0x14 within it)
+ * is 0x01 for an Open Firmware/FCode image, and its own length field
+ * (offset 0x0A) tells us where the FCode program itself begins: right
+ * after the PCI Data Structure.
+ *
+ * A card that genuinely carries its own Open Firmware driver -- as
+ * real hardware (and this project's ati-rage128-pro, when given a
+ * real dumped expansion ROM via romfile=) does -- should have that
+ * driver executed, the same way a real Open Firmware implementation
+ * would, instead of unconditionally substituting the generic
+ * QEMU,VGA.bin driver below.
+ *
+ * Returns a pointer to the start of the FCode program, or NULL if
+ * this ROM doesn't carry one (no ROM, an x86-only VBIOS, EFI, etc).
+ */
+static const unsigned char *find_fcode_rom(unsigned long rom, uint32_t rom_size)
+{
+        const unsigned char *p = (const unsigned char *)rom;
+        uint32_t pcir_off, ds_len;
+
+        if (rom_size < 0x1A || p[0] != 0x55 || p[1] != 0xAA) {
+                return NULL;
+        }
+
+        pcir_off = p[0x18] | (p[0x19] << 8);
+        if (pcir_off + 0x18 > rom_size ||
+            p[pcir_off] != 'P' || p[pcir_off + 1] != 'C' ||
+            p[pcir_off + 2] != 'I' || p[pcir_off + 3] != 'R') {
+                return NULL;
+        }
+
+        if (p[pcir_off + 0x14] != 0x01) {
+                /* Not an Open Firmware image -- x86 VBIOS, EFI, etc. */
+                return NULL;
+        }
+
+        ds_len = p[pcir_off + 0x0A] | (p[pcir_off + 0x0B] << 8);
+        if (pcir_off + ds_len > rom_size) {
+                return NULL;
+        }
+
+        return p + pcir_off + ds_len;
+}
+
+/*
+ * Executing a card's real FCode driver inline, here, during PCI probe
+ * was tried and hangs (verified live: no crash, timebase advancing,
+ * PC cycling through ordinary dictionary-search code for minutes with
+ * no framebuffer ever initialized -- real hardware and the real Apple
+ * ROM never take anywhere near that long). Cause not fully understood;
+ * deferring to boot-command, after probe-all has fully completed and
+ * right before the (also deferred) boot, sidesteps whatever probe-time
+ * state the inline attempt was tripping over. This mirrors how a real
+ * card's FCode is normally expected to run: as part of a full "open"
+ * of the device, not synchronously inside its own config callback.
+ */
+static struct {
+        int found;
+        unsigned long rom_addr;
+        uint32_t rom_size;
+        uint32_t fcode_offset;
+        char device_path[256];
+} ati_rom_deferred = { 0 };
+#endif
+
 int vga_config_cb (const pci_config_t *config)
 {
 #ifdef CONFIG_PPC
         unsigned long rom;
         uint32_t rom_size, size, bar;
         phandle_t ph;
+        const unsigned char *fcode_rom = NULL;
 #endif
         if (config->assigned[0] != 0x00000000) {
             setup_video();
@@ -1076,12 +1147,33 @@ int vga_config_cb (const pci_config_t *config)
                                                  p, rom_size);
                             }
                     }
+
+                    fcode_rom = find_fcode_rom(rom, rom_size);
+                    if (fcode_rom) {
+                            ati_rom_deferred.found = 1;
+                            ati_rom_deferred.rom_addr = rom;
+                            ati_rom_deferred.rom_size = rom_size;
+                            ati_rom_deferred.fcode_offset = fcode_rom - (const unsigned char *)rom;
+                            strncpy(ati_rom_deferred.device_path, config->path,
+                                   sizeof(ati_rom_deferred.device_path) - 1);
+                            ati_rom_deferred.device_path[sizeof(ati_rom_deferred.device_path) - 1] = '\0';
+                    }
             }
 #endif
 
-            /* Currently we don't read FCode from the hardware but execute
-             * it directly */
-            feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+#ifdef CONFIG_PPC
+            if (!fcode_rom)
+#endif
+            {
+                    /* No real FCode ROM present (e.g. QEMU's own generic
+                     * std-vga), or none found -- fall back to the
+                     * hardcoded generic driver, as before. A card with a
+                     * real FCode ROM gets it deferred to boot-command
+                     * instead (see ati_rom_deferred above), so this
+                     * fallback is skipped for it here.
+                     */
+                    feval("['] vga-driver-fcode 2 cells + 1 byte-load");
+            }
 
 #ifdef CONFIG_MOL
             /* Install special words for Mac On Linux */
@@ -2285,6 +2377,51 @@ int ob_pci_init(void)
     /* configure the host bridge interrupt map */
     intc = ob_pci_host_set_interrupt_map(phandle_host);
     ob_pci_bus_set_interrupt_map(phandle_host, intc, ob_pci_host_bus_interrupt);
+
+#ifdef CONFIG_PPC
+    /*
+     * A card's real FCode driver was found during probe (see
+     * vga_config_cb's ati_rom_deferred comment for why this is
+     * deferred rather than run inline). Copy the ROM somewhere it
+     * will survive until boot-command runs -- probe-all's own scratch
+     * usage of low memory doesn't persist that long -- and arrange
+     * for boot-command to open the device (so the FCode runs with a
+     * real instance active, as "open" would give it) and byte-load
+     * the FCode from the copy before continuing to boot.
+     */
+    if (ati_rom_deferred.found) {
+        /*
+         * A hardcoded scratch physical address was tried here first
+         * and hung USB root-hub polling -- verified live, reproduced
+         * only with this device present, not with a plain machine --
+         * almost certainly because it collided with real state
+         * (probably a USB controller's own DMA descriptors) already
+         * living at that address. ofmem_malloc() is the same real
+         * allocator every other dynamic OpenBIOS allocation on this
+         * arch uses (see ofmem_common.c), so it can't collide with
+         * anything else already claimed.
+         */
+        unsigned long load_base = (unsigned long)ofmem_malloc(ati_rom_deferred.rom_size);
+        char boot_cmd[512];
+
+        if (load_base) {
+            memcpy((void *)load_base, (void *)ati_rom_deferred.rom_addr,
+                  ati_rom_deferred.rom_size);
+
+            snprintf(boot_cmd, sizeof(boot_cmd),
+                     "\" %s\" open-dev dup 0= if drop boot then "
+                     "to my-self "
+                     "%lx 1 byte-load "
+                     "boot",
+                     ati_rom_deferred.device_path,
+                     load_base + ati_rom_deferred.fcode_offset);
+
+            push_str(boot_cmd);
+            push_str("boot-command");
+            fword("$setenv");
+        }
+    }
+#endif
 
     return 0;
 }
