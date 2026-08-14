@@ -572,12 +572,12 @@ static void powermgt_init(char *path)
                           /* 0x00004000 : Can wake on LID/case open */
                           /* 0x00008000 : Can power off PCI on sleep */
                           /* 0x00010000 : Supports deep sleep */
-                          0x00, 0x01, 0xe7, 0x05,
+                          0x00, 0x01, 0xa7, 0x05,  /* was 0xe7 - cleared bit 14 for desktop */
                           /* Private PM features */
                           /* 0x00000400 : Supports ICT control */
                           /* 0x00001000 : Supports Idle2 in hardware */
                           /* 0x00002000 : Open case prevents sleep */
-                          0x00, 0x00, 0x34, 0x00,
+                          0x00, 0x00, 0x14, 0x00,  /* was 0x34 - cleared bit 13 for desktop */
                           0x00, 0x00, 0x00, 0x00,
                           0x00, 0x00, /* # of batteries supported */
                           0x26, 0x0d,
