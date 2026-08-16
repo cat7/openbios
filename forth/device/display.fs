@@ -355,6 +355,28 @@ defer fb8-invertrect
 
   my-self to display-ih
 
+  \ fb8-install is the 8-bit frame-buffer package: one byte per pixel,
+  \ rows screen-width bytes apart (real FCode drivers pass linebytes as
+  \ the width for exactly that reason -- e.g. ATI's Rage 128 ROM). Our
+  \ fill/blit primitives, however, are generic and take the pixel size
+  \ and row stride from depth-bits/line-bytes, which until now only the
+  \ built-in QEMU VGA driver ever set (to 32bpp). Take them from the
+  \ display package's own "depth"/"linebytes" properties when it has
+  \ them (both the VGA driver and real ROMs set those before calling
+  \ us), else assume the classic 8-bit layout. Also make the clipping
+  \ bounds follow this display rather than the VGA defaults.
+  8 to depth-bits
+  screen-width to line-bytes
+  my-self ihandle>phandle >r
+  " depth" r@ get-package-property 0= if
+    decode-int to depth-bits 2drop
+  then
+  " linebytes" r> get-package-property 0= if
+    decode-int to line-bytes 2drop
+  then
+  screen-width to openbios-video-width
+  screen-height to openbios-video-height
+
   \ set /chosen display property
   my-self active-package 0 to my-self
   " /chosen" (find-dev) 0<> if
