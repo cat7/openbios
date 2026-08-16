@@ -409,21 +409,66 @@ static void ob_pci_unmap(ucell virt, ucell size) {
 #endif
 }
 
-/* ( pci-addr.lo pci-addr.mid pci-addr.hi size -- virt ) */
+/* ( pci-addr.lo pci-addr.mid pci-addr.hi size -- virt )
+ *
+ * IEEE 1275 PCI bus binding map-in. phys.hi is the config-space cell
+ * (npt000ss bbbbbbbb dddddfff rrrrrrrr): the space code lives in ss and
+ * bus/dev/fn/reg identify the device and its base-address register;
+ * phys.lo/phys.mid carry the PCI bus address itself. This used to take
+ * phys.lo and pass it through pci_decode_pci_addr() as though it were a
+ * raw BAR value, dropping phys.hi entirely -- fine for our own vga.fs,
+ * which passes an assigned-addresses entry, but not for a real card's
+ * FCode. The Rage 128 Pro ROM maps its apertures with phys.lo/mid = 0
+ * and the BAR named in phys.hi ("0 0 my-space h# 2000010 + size
+ * map-in"): the address it wants is the BAR's current base, which only
+ * the bus node can know. Resolve that case by reading the BAR from
+ * config space; a non-zero phys.lo/mid is a real PCI address and is
+ * used as given.
+ */
 
 static void
 ob_pci_bus_map_in(int *idx)
 {
-	uint32_t ba;
+	uint32_t hi, mid, lo, ba;
 	ucell size;
 	ucell virt;
+	int space;
 
 	PCI_DPRINTF("ob_pci_bar_map_in idx=%p\n", idx);
 
 	size = POP();
-	POP();
-	POP();
-	ba = POP();
+	hi = POP();
+	mid = POP();
+	lo = POP();
+
+	space = (hi >> 24) & 3;		/* 1 = I/O, 2 = mem32, 3 = mem64 */
+	ba = lo;
+
+	if (lo == 0 && mid == 0 && (hi & 0xff) != 0) {
+		/* relocatable, offset 0: use the BAR's assigned base */
+		pci_addr addr = PCI_ADDR(PCI_BUS(hi), PCI_DEV(hi), PCI_FN(hi));
+		uint32_t bar = pci_config_read32(addr, hi & 0xff);
+
+		if (bar & 1) {
+			ba = bar & ~3u;
+			space = 1;
+		} else {
+			ba = bar & ~0xfu;
+		}
+	}
+
+	/*
+	 * ob_pci_map() decodes the space from the low bits of a BAR-style
+	 * value; hand it one shaped that way.
+	 */
+	if (space == 1) {
+		ba = (ba & ~3u) | 1;
+	} else {
+		ba &= ~0xfu;
+	}
+
+	PCI_DPRINTF("map-in: hi=%x mid=%x lo=%x -> ba=%x size=%lx\n",
+		    hi, mid, lo, ba, (unsigned long)size);
 
 	virt = ob_pci_map(ba, size);
 
