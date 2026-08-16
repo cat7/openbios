@@ -1178,6 +1178,24 @@ int vga_config_cb (const pci_config_t *config)
             setup_video();
 
 #ifdef CONFIG_PPC
+            /*
+             * Apple's Open Firmware leaves the display card's bus
+             * mastering enabled, and Mac OS relies on it: the Rage 128
+             * driver never sets PCI_COMMAND.MASTER itself, yet submits
+             * every accelerated operation -- menu bar and menu fills,
+             * host-data blits for text and icons -- through CCE indirect
+             * buffers in system memory, fetched via the card's PCI GART.
+             * With bus mastering off those fetches read all zeros
+             * (QEMU's bus-master address space is empty), so nothing the
+             * accelerator was asked to draw ever appears while CPU-drawn
+             * content does: an unpainted menu bar, menus without their
+             * background, garbled Control Strip. Same class of quirk as
+             * rtl8139_config_cb() below.
+             */
+            if (is_apple()) {
+                    ob_pci_enable_bus_master(config);
+            }
+
             if (config->assigned[6]) {
                     rom = pci_bus_addr_to_host_addr(MEMORY_SPACE_32,
                                                     config->assigned[6] & ~0x0000000F);
