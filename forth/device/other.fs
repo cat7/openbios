@@ -56,7 +56,44 @@ defer (poke)
 
 
 \ 5.3.7.2 Device-register access
+\
+\ These take a full (virtual) address of a device register, as handed
+\ out by map-in. On PowerPC every register a card's FCode touches is
+\ memory-mapped PCI space, and the PCI bus binding defines rw@/rl@/rw!/rl!
+\ as little-endian accesses -- the value on the stack is in host order,
+\ the device sees PCI byte order. They must NOT be the ioc@/iol@ family:
+\ those are the x86-style ISA port primitives, which truncate the address
+\ to a 16-bit port number and add isa_io_base, so an rl! to a mapped
+\ register at, say, 0x88000050 silently went to 0xf2000050 instead and
+\ every memory-mapped store a real Rage 128 ROM made from its open
+\ method vanished (the I/O-BAR indirect path it uses at probe time only
+\ worked because 0xf2001000 truncates back onto itself).
 
+[IFDEF] CONFIG_PPC
+: rb@    ( addr -- byte )
+  c@
+  ;
+
+: rw@    ( waddr -- w )
+  w@ wbflip
+  ;
+
+: rl@    ( qaddr -- quad )
+  l@ lbflip
+  ;
+
+: rb!    ( byte addr -- )
+  c!
+  ;
+
+: rw!    ( w waddr -- )
+  swap wbflip swap w!
+  ;
+
+: rl!    ( quad qaddr -- )
+  swap lbflip swap l!
+  ;
+[ELSE]
 : rb@    ( addr -- byte )
   ioc@
   ;
@@ -80,6 +117,7 @@ defer (poke)
 : rl!    ( quad qaddr -- )
   iol!
   ;
+[THEN]
 
 : rx@ ( oaddr - o )
   state @ if
