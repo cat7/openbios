@@ -53,11 +53,13 @@ keyboard_close(int *idx)
 }
 
 static void keyboard_read(void);
+static void keyboard_get_key_map(void);
 
 NODE_METHODS( usb_kbd ) = {
 	{ "open",		keyboard_open		},
 	{ "close",		keyboard_close		},
 	{ "read",               keyboard_read		},
+	{ "get-key-map",        keyboard_get_key_map	},
 };
 
 #ifdef CONFIG_DEBUG_USB
@@ -557,6 +559,35 @@ static void keyboard_read(void)
 		*addr++ = (char)key;
 	}
 	PUSH(i);
+}
+
+/* ( -- keymap )
+ * Returns a pointer to a 32-byte (256-bit) keymap buffer, matching the
+ * convention used by the ADB keyboard driver's get-key-map (see
+ * drivers/adb_kbd.c: "should return a pointer to an array with 32 bytes
+ * (256 bits)", and its own 32-byte kbd->keytable). Mac OS calls this
+ * during boot to check for held-down key combinations (Cmd-Opt-P-R,
+ * Cmd-Opt-O-F, etc).
+ *
+ * Was previously 16 bytes -- half the ADB driver's established size --
+ * which reads 16 bytes past the end of the buffer into whatever static
+ * data happens to follow it in memory on any code path that actually
+ * reads the full 32 bytes back.
+ *
+ * We don't track real-time USB key state during the Open Firmware phase,
+ * so this always reports an empty keymap (no keys held), which lets boot
+ * proceed normally rather than triggering an unwanted key combo.
+ */
+static void keyboard_get_key_map(void)
+{
+	static unsigned char keymap[32];
+
+	memset(keymap, 0, sizeof(keymap));
+
+	/* Poll USB so any pending keyboard state is up to date. */
+	usb_poll();
+
+	PUSH(pointer2cell(keymap));
 }
 
 void ob_usb_hid_add_keyboard(const char *path)

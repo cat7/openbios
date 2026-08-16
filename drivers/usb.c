@@ -205,7 +205,16 @@ get_descriptor (usbdev_t *dev, unsigned char bmRequestType, int descType,
 	   different location */
 	size = dd.bLength;
 	if (dd.bDescriptorType == 2) {
-		int realsize = __le16_to_cpu(dd.bcdUSB);
+		/*
+		 * bcdUSB only exists in the device descriptor -- reading it
+		 * here reads garbage from whatever's actually at that offset
+		 * in a configuration descriptor's own bytes, corrupting
+		 * everything parsed after it (sub-descriptors read at wrong
+		 * offsets, endpoint counts wrong, etc). wTotalLength is the
+		 * configuration descriptor's own real size field.
+		 */
+		configuration_descriptor_t *temp_cd = (configuration_descriptor_t *)&dd;
+		int realsize = __le16_to_cpu(temp_cd->wTotalLength);
 		size = realsize;
 	}
 	result = malloc (size);
@@ -430,6 +439,11 @@ set_address (hci_t *controller, int speed, int hubport, int hubaddr)
 				};
 				usb_debug ("   #%x: Endpoint %x (%s), max packet size %x, type %s\n", j, endp->bEndpointAddress & 0x7f, ((endp->bEndpointAddress & 0x80) != 0) ? "in" : "out", __le16_to_cpu(endp->wMaxPacketSize), transfertypes[endp->bmAttributes]);
 #endif
+				if (dev->num_endp >= sizeof(dev->endpoints) / sizeof(dev->endpoints[0])) {
+					usb_debug("WARNING: Too many endpoints, skipping endpoint %d\n", j);
+					break;
+				}
+
 				endpoint_t *ep =
 					&dev->endpoints[dev->num_endp++];
 				ep->dev = dev;
