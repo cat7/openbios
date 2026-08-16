@@ -1379,6 +1379,31 @@ int i82378_config_cb(const pci_config_t *config)
 
 int usb_ohci_config_cb(const pci_config_t *config)
 {
+#ifdef CONFIG_PPC
+    /*
+     * Apple's firmware tags each onboard KeyLargo OHCI with the clock
+     * it hangs off ("usb0u048" for the first controller, "usb1u148" for
+     * the second -- see any real PowerMac3,x device tree) plus a bus
+     * number. Mac OS X's platform expert (AppleMacRISC2PE and friends)
+     * matches AppleUSBOHCI into its power tree ON THIS PROPERTY: the
+     * controller becomes a child of the IOPMUSBMacRISC2 domain and of
+     * the KeyLargo USB clock domain, which together supply the
+     * IOPMPowerOn|IOPMClockNormal that the driver's KeyLargo power
+     * state table demands. Without the tag the driver is parked in
+     * power state 0 by IOKit -- HcControl HCFS=Suspend, all lists off,
+     * forever -- and Mac OS X 10.0/10.1 boot with a dead USB keyboard
+     * and mouse (or with input working only by accident of timing).
+     */
+    if (is_newworld()) {
+        static int ohci_index;
+        phandle_t ph = get_cur_dev();
+        const char *clock_id = ohci_index ? "usb1u148" : "usb0u048";
+
+        set_property(ph, "AAPL,clock-id", clock_id, strlen(clock_id) + 1);
+        set_int_property(ph, "AAPL,bus-id", ohci_index + 1);
+        ohci_index++;
+    }
+#endif
 #ifdef CONFIG_DRIVER_USB
     pci_addr addr = PCI_ADDR(
         PCI_BUS(config->dev), PCI_DEV(config->dev), PCI_FN(config->dev));
