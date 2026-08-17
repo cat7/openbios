@@ -187,10 +187,29 @@ defer fb8-invertrect
 ;
 
 : fb8-copy-lines ( count from to -- )
+  \ Row by row: the text window may be narrower than a frame-buffer
+  \ row (a real FCode driver passes its linebytes as the fb8 width --
+  \ e.g. ATI's Rage 128 ROM: 768-byte rows for an 80-column, 640-pixel
+  \ console), so one contiguous move of #columns*char-width bytes per
+  \ row shifted only part of the screen and left stale rows behind that
+  \ every later scroll copied upwards again. Walk the rows in the
+  \ direction that never overwrites a row before it has been copied.
   fb8-line2addr swap
-  fb8-line2addr swap
-  #columns char-width * depth-bytes *
-  3 pick * move drop
+  fb8-line2addr swap ( count fromaddr toaddr )
+  2dup < if
+    \ moving rows down the screen: start at the last row, step back
+    >r >r dup 1- screen-width depth-bytes * * dup r> + swap r> + ( count from' to' )
+    rot 0 ?do
+      2dup #columns char-width * depth-bytes * move
+      screen-width depth-bytes * dup >r - swap r> - swap
+    loop
+  else
+    rot 0 ?do
+      2dup #columns char-width * depth-bytes * move
+      screen-width depth-bytes * dup >r + swap r> + swap
+    loop
+  then
+  2drop
 ;
 
 : fb8-clear-lines ( count line -- )
