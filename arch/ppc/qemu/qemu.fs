@@ -81,6 +81,78 @@ variable keyboard-phandle 0 keyboard-phandle !
 ; SYSTEM-initializer
 
 \ -------------------------------------------------------------------------
+\ ATI Rage 128 FCode boot-console mode
+\ -------------------------------------------------------------------------
+\
+\ Apple's OF hands ATI's FCode a 32-byte "ATYN" record on the card's own
+\ node -- Mac OS's display driver saves its current mode there through
+\ NVRAM -- and the ROM's open (word 0x9a4 in 109-72700-136) then brings
+\ the console up in that mode instead of its built-in 640x480 default:
+\   [0..1] mode id (the ROM's mode-table id, 16-bit big-endian)
+\   [2..3] monitor sense code (only checked when there is no EDID)
+\   [5]    depth code, h# 80 = 8bpp
+\   [7]    checksum byte of the monitor's EDID (must match)
+\ We have no such NVRAM record, so build one from the screen-mode config
+\ variable ("WIDTHxHEIGHT"), taking sense code and EDID checksum from the
+\ properties the ROM's own probe published. The mode ids below are the
+\ ROM's (show-modes order: 800x600@60 is mode 0, id h# 10); a mode the
+\ ROM has not enabled from the EDID is refused by set-mode as "Mode
+\ disabled" and the ROM keeps its default, so this is always safe.
+
+create aty-mode-table
+  d# 640  , d# 480  , 6     ,   \ 640x480@60Hz
+  d# 800  , d# 600  , h# 10 ,   \ 800x600@60Hz
+  d# 832  , d# 624  , h# 17 ,   \ 832x624@75Hz
+  d# 1024 , d# 768  , h# 19 ,   \ 1024x768@60Hz
+  d# 1152 , d# 870  , h# 21 ,   \ 1152x870@75Hz
+  d# 1280 , d# 1024 , h# 24 ,   \ 1280x1024@75Hz
+  0 , 0 , 0 ,
+
+create aty-atyn-buf h# 20 allot
+
+: (aty-mode-id) ( width height -- id true | false )
+  aty-mode-table
+  begin dup @ while
+    dup @ 3 pick = over cell+ @ 3 pick = and if
+      2 cells + @ nip nip true exit
+    then
+    3 cells +
+  repeat
+  drop 2drop false
+;
+
+: (aty-console-mode) ( phandle -- )
+  screen-mode dup 0= if 2drop drop exit then
+  ascii x left-split                          ( ph hstr hlen wstr wlen )
+  base @ >r decimal
+  $number if r> base ! 2drop drop exit then   ( ph hstr hlen width )
+  -rot $number if r> base ! 2drop exit then   ( ph width height )
+  r> base !
+  (aty-mode-id) 0= if drop exit then          ( ph id )
+  aty-atyn-buf h# 20 0 fill
+  dup 8 rshift aty-atyn-buf c! aty-atyn-buf 1+ c!
+  h# 80 aty-atyn-buf 5 + c!
+  " ATY,Flags" 2 pick get-package-property 0= if
+    decode-int nip nip d# 16 rshift
+    dup 8 rshift aty-atyn-buf 2 + c! aty-atyn-buf 3 + c!
+  then
+  " EDID" 2 pick get-package-property 0= if
+    dup h# 80 = if + 1- c@ aty-atyn-buf 7 + c! else 2drop then
+  then
+  active-package swap active-package!
+  aty-atyn-buf h# 20 encode-bytes " ATYN" property
+  active-package!
+;
+
+:noname
+  0 begin " display" iterate-device-type ?dup while
+    dup " ATY,Fcode" rot get-package-property 0= if
+      2drop dup (aty-console-mode)
+    then
+  repeat
+; SYSTEM-initializer
+
+\ -------------------------------------------------------------------------
 \ pre-booting
 \ -------------------------------------------------------------------------
 
