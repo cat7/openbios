@@ -26,6 +26,15 @@ true value fcode-headers?  \ If true, possibly save names for FCodes.
 variable fcode-end         \ state variable, if true, fcode program terminates.
 defer fcode-c@             \ get byte
 
+\ IEEE 1275 w, and l, ( 7.3.4.3 ) compile without aligning; the OpenBIOS
+\ words of the same name align here first. FCode drivers build packed
+\ tables with them -- ATI's Rage 128 ROM keeps its Apple-monitor-sense
+\ table as 7-byte records ( w, c, l, ) and walks it with i wa+ i ca+ i la+,
+\ so with padding inserted every lookup missed and every monitor came out
+\ as "no monitor" ( display-type NONE ). Bind the FCode tokens to these.
+: fcode-w, ( w -- )  here /w allot unaligned-w! ;
+: fcode-l, ( l -- )  here /l allot unaligned-l! ;
+
 : fcode-push-state ( -- <state information> )
   ?fcode-offset16
   fcode-spread
