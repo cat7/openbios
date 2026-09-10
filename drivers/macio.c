@@ -232,7 +232,7 @@ screamer_init(const char *path)
             set_int_property(dnode, "#-detects", 3);
             set_int_property(dnode, "#-features", 3);
             set_int_property(dnode, "#-outputs", 2);
-            set_int_property(dnode, "#-inputs", 1);
+            set_int_property(dnode, "#-inputs", 4);
             set_int_property(dnode, "icon-id", 0xffffbf4d);
             set_int_property(dnode, "info-id", 0xffffbf44);
             set_int_property(dnode, "name-id", 0xffffbf4d);
@@ -287,6 +287,19 @@ davbus_init(const char *path, phys_addr_t addr)
         props[4] = DAVBUS_RX_OFFSET;
         props[5] = DAVBUS_RX_SIZE;
         set_property(dnode, "reg", (char *)&props, 6 * sizeof(props[0]));
+
+        {
+            static const uint32_t clock_data[24] = {
+                0x02b11000, 0x0000003c, 0x0000004a, 0x00000000,
+                0x00000000, 0x00000044, 0x00000400, 0x00000044,
+                0x00000004, 0x61753439, 0x6e756c6c, 0x00000000,
+                0x02ee0000, 0x0000003c, 0x00000048, 0x0000003c,
+                0x00000002, 0x00000044, 0x00000200, 0x00000044,
+                0x00000002, 0x61753435, 0x6e756c6c, 0x00000000,
+            };
+            set_property(dnode, "AAPL,clock-data", (char *)clock_data,
+                         sizeof(clock_data));
+        }
 
         if (is_oldworld()) {
             props[0] = 0x11;
