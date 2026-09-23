@@ -92,6 +92,11 @@ int is_newworld(void)
            (machine_id == ARCH_MAC99_U3);
 }
 
+int is_u3(void)
+{
+    return machine_id == ARCH_MAC99_U3;
+}
+
 #define CORE99_VIA_CONFIG_CUDA     0x0
 #define CORE99_VIA_CONFIG_PMU      0x1
 #define CORE99_VIA_CONFIG_PMU_ADB  0x2
@@ -1011,8 +1016,38 @@ arch_of_init(void)
         fword("property");
         break;
 
-    case ARCH_MAC99:
     case ARCH_MAC99_U3:
+
+        /* model */
+
+        push_str("PowerMac7,3");
+        fword("model");
+
+        /* compatible */
+
+        push_str("PowerMac7,3");
+        fword("encode-string");
+        push_str("MacRISC4");
+        fword("encode-string");
+        fword("encode+");
+        push_str("Power Macintosh");
+        fword("encode-string");
+        fword("encode+");
+        push_str("compatible");
+        fword("property");
+
+        /* misc */
+
+        push_str("bootrom");
+        fword("device-type");
+
+        PUSH(fw_cfg_read_i32(FW_CFG_PPC_BUSFREQ));
+        fword("encode-int");
+        push_str("clock-frequency");
+        fword("property");
+        break;
+
+    case ARCH_MAC99:
     case ARCH_PREP:
     default:
 

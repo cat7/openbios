@@ -267,12 +267,16 @@ ob_unin_init(void)
         int props[2];
 
         fword("new-device");
-        push_str("uni-n");
+        push_str(is_u3() ? "u3" : "uni-n");
         fword("device-name");
 
-        dnode = find_dev("/uni-n");
+        dnode = find_dev(is_u3() ? "/u3" : "/uni-n");
         set_property(dnode, "device_type", "memory-controller", 18);
-        set_property(dnode, "compatible", "uni-north", 10);
+        if (is_u3()) {
+                set_property(dnode, "compatible", "u3", 3);
+        } else {
+                set_property(dnode, "compatible", "uni-north", 10);
+        }
         set_int_property(dnode, "device-rev", 7);
         props[0] = __cpu_to_be32(0xf8000000);
         props[1] = __cpu_to_be32(0x1000000);
