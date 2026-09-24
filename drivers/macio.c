@@ -27,6 +27,7 @@
 #define OW_IO_NVRAM_SHIFT  4
 
 #define NW_IO_NVRAM_SIZE   0x00004000
+#define NVRAM_BANK_SIZE    0x2000
 #define NW_IO_NVRAM_OFFSET 0xfff04000
 
 #define IO_OPENPIC_SIZE    0x00040000
@@ -49,6 +50,9 @@ int
 macio_get_nvram_size(void)
 {
 	int shift = macio_nvram_shift();
+        /* one 8 KB bank of the U3's two */
+        if (is_u3())
+                return NVRAM_BANK_SIZE;
         if (is_oldworld())
                 return OW_IO_NVRAM_SIZE >> shift;
         else
@@ -141,32 +145,87 @@ dump_nvram(void)
 #endif
 
 
-/* The U3's NVRAM is Intel-style flash in 8 KB blocks */
-#define NVRAM_FLASH_SECTOR 0x2000
+/*
+ * The U3's NVRAM is Intel-style flash: two 8 KB banks, each headed by a
+ * 0x5a "nvram" partition holding the Adler-32 of the bank from byte 20
+ * and a generation. The live bank is A if its generation is the higher
+ * valid one, else B; a write goes to the other bank, one generation on,
+ * as Apple's firmware and Mac OS X do it.
+ */
+static int nvram_bank;
+static uint32_t nvram_generation;
+
+static uint8_t
+core99_chrp_checksum(const unsigned char *p)
+{
+	unsigned int i, sum = 0;
+
+	for (i = 0; i < 16; i++) {
+		if (i == 1) {
+			continue;
+		}
+		sum += p[i];
+		if (sum > 0xff) {
+			sum = (sum & 0xff) + 1;
+		}
+	}
+	return sum;
+}
+
+static uint32_t
+core99_adler32(const unsigned char *p, int len)
+{
+	uint32_t lo = 1, hi = 0;
+	int i;
+
+	for (i = 0; i < len; i++) {
+		lo = (lo + p[i]) % 65521;
+		hi = (hi + lo) % 65521;
+	}
+	return (hi << 16) | lo;
+}
+
+static uint32_t
+core99_bank_generation(const unsigned char *p)
+{
+	if (p[0] != 0x5a || p[1] != core99_chrp_checksum(p) ||
+	    *(uint32_t *)(p + 16) != core99_adler32(p + 20, NVRAM_BANK_SIZE - 20)) {
+		return 0;
+	}
+	return *(uint32_t *)(p + 20);
+}
 
 static void
 macio_nvram_flash_put(char *buf)
 {
-	volatile unsigned char *p = (volatile unsigned char *)nvram;
-	int i, b;
+	unsigned char *b = (unsigned char *)buf;
+	volatile unsigned char *p;
+	int i;
 
-	for (b = 0; b < arch_nvram_size(); b += NVRAM_FLASH_SECTOR) {
-		p[b] = 0x20;
-		p[b] = 0xd0;
-		while (!(p[b] & 0x80)) {
-		}
-		p[b] = 0xff;
-		for (i = b; i < b + NVRAM_FLASH_SECTOR; i++) {
-			if ((unsigned char)buf[i] == 0xff) {
-				continue;
-			}
-			p[i] = 0x40;
-			p[i] = buf[i];
-			while (!(p[i] & 0x80)) {
-			}
-		}
-		p[b] = 0xff;
+	if (b[0] == 0x5a) {
+		*(uint32_t *)(b + 20) = nvram_generation + 1;
+		b[1] = core99_chrp_checksum(b);
+		*(uint32_t *)(b + 16) = core99_adler32(b + 20, NVRAM_BANK_SIZE - 20);
 	}
+
+	nvram_bank ^= 1;
+	p = (volatile unsigned char *)nvram + nvram_bank * NVRAM_BANK_SIZE;
+	p[0] = 0x20;
+	p[0] = 0xd0;
+	while (!(p[0] & 0x80)) {
+	}
+	p[0] = 0xff;
+	for (i = 0; i < NVRAM_BANK_SIZE; i++) {
+		if (b[i] == 0xff) {
+			continue;
+		}
+		p[i] = 0x40;
+		p[i] = b[i];
+		while (!(p[i] & 0x80)) {
+		}
+	}
+	p[0] = 0xff;
+	nvram_generation++;
 }
 
 void
@@ -193,6 +252,16 @@ macio_nvram_get(char *buf)
 	int i;
         unsigned int it_shift = macio_nvram_shift();
 
+	if (is_u3()) {
+		uint32_t gen_a = core99_bank_generation((unsigned char *)nvram);
+		uint32_t gen_b = core99_bank_generation((unsigned char *)nvram +
+		                                        NVRAM_BANK_SIZE);
+
+		nvram_bank = gen_a > gen_b ? 0 : 1;
+		nvram_generation = gen_a > gen_b ? gen_a : gen_b;
+		memcpy(buf, nvram + nvram_bank * NVRAM_BANK_SIZE, NVRAM_BANK_SIZE);
+		return;
+	}
 	for (i=0; i< arch_nvram_size(); i++)
                 buf[i] = nvram[i << it_shift];
 
