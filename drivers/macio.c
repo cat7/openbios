@@ -542,6 +542,46 @@ ob_macio_heathrow_init(const char *path, phys_addr_t addr)
     set_property(aliases, "mac-io", path, strlen(path) + 1);
 }
 
+/* The K2's I2C bus, with the TAS3004 sound equalizer */
+static void
+k2_i2c_init(phys_addr_t addr, phandle_t mpic)
+{
+        phandle_t dnode;
+        int props[2];
+
+        fword("new-device");
+        push_str("i2c");
+        fword("device-name");
+        dnode = get_cur_dev();
+        set_property(dnode, "device_type", "i2c", 4);
+        set_property(dnode, "compatible", "k2-i2c\0keywest-i2c", 19);
+        set_property(dnode, "built-in", "", 0);
+        props[0] = __cpu_to_be32(0x18000);
+        props[1] = __cpu_to_be32(0x1000);
+        set_property(dnode, "reg", (char *)&props, sizeof(props));
+        props[0] = __cpu_to_be32(0x1a);
+        props[1] = __cpu_to_be32(1);
+        set_property(dnode, "interrupts", (char *)&props, sizeof(props));
+        set_int_property(dnode, "interrupt-parent", mpic);
+        set_int_property(dnode, "AAPL,address", addr + 0x18000);
+        set_int_property(dnode, "AAPL,address-step", 0x10);
+        set_int_property(dnode, "AAPL,i2c-rate", 100);
+        set_property(dnode, "AAPL,driver-name", ".i2c-mac-io", 12);
+        set_int_property(dnode, "#address-cells", 1);
+        set_int_property(dnode, "#size-cells", 0);
+
+        fword("new-device");
+        push_str("deq");
+        fword("device-name");
+        dnode = get_cur_dev();
+        set_property(dnode, "device_type", "deq", 4);
+        set_int_property(dnode, "reg", 0x6a);
+        set_int_property(dnode, "i2c-address", 0x6a);
+        fword("finish-device");
+
+        fword("finish-device");
+}
+
 void
 ob_macio_keylargo_init(const char *path, phys_addr_t addr)
 {
@@ -562,6 +602,14 @@ ob_macio_keylargo_init(const char *path, phys_addr_t addr)
         macio_ide_init(path, addr, 2);
     }
     openpic_init(path, addr);
+    if (is_u3()) {
+        char buf[128];
+        phandle_t mpic;
+
+        snprintf(buf, sizeof(buf), "%s/interrupt-controller", path);
+        mpic = find_dev(buf);
+        k2_i2c_init(addr, mpic);
+    }
 
     aliases = find_dev("/aliases");
     set_property(aliases, "mac-io", path, strlen(path) + 1);
