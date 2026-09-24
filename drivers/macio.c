@@ -301,6 +301,46 @@ NODE_METHODS(ob_macio) = {
         { "dma-sync",		ob_macio_dma_sync		},
 };
 
+/*
+ * The U3's own I2C bus, with the Pulsar clock chip Mac OS X uses to
+ * freeze the timebase while it starts a second CPU.
+ */
+static void
+ob_u3_i2c_init(phandle_t u3)
+{
+        phandle_t dnode;
+        int props[2];
+
+        set_int_property(u3, "#address-cells", 1);
+        set_int_property(u3, "#size-cells", 1);
+
+        fword("new-device");
+        push_str("i2c");
+        fword("device-name");
+        dnode = get_cur_dev();
+        set_property(dnode, "device_type", "i2c", 4);
+        set_property(dnode, "compatible", "keywest-i2c\0uni-n-i2c", 22);
+        props[0] = __cpu_to_be32(0xf8001000);
+        props[1] = __cpu_to_be32(0x1000);
+        set_property(dnode, "reg", (char *)&props, sizeof(props));
+        set_int_property(dnode, "AAPL,address", 0xf8001000);
+        set_int_property(dnode, "AAPL,address-step", 0x10);
+        set_int_property(dnode, "AAPL,i2c-rate", 100);
+        set_property(dnode, "AAPL,driver-name", ".i2c-uni-n", 11);
+        set_int_property(dnode, "#address-cells", 1);
+        set_int_property(dnode, "#size-cells", 0);
+
+        fword("new-device");
+        push_str("i2c-hwclock");
+        fword("device-name");
+        dnode = get_cur_dev();
+        set_property(dnode, "compatible", "pulsar-legacy-slewing", 22);
+        set_int_property(dnode, "reg", 0xd2);
+        fword("finish-device");
+
+        fword("finish-device");
+}
+
 void
 ob_unin_init(void)
 {
@@ -331,6 +371,10 @@ ob_unin_init(void)
                 props[0] = __cpu_to_be32(0xf8000000);
                 props[1] = __cpu_to_be32(0x1000000);
                 set_property(dnode, "reg", (char *)&props, sizeof(props));
+        }
+
+        if (is_u3()) {
+                ob_u3_i2c_init(dnode);
         }
 
         fword("finish-device");
