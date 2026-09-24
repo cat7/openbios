@@ -21,6 +21,9 @@
 #include "libc/diskio.h"
 
 #include "arch/common/xcoff.h"
+#ifdef CONFIG_PPC
+#include "drivers/drivers.h"
+#endif
 
 #ifdef CONFIG_PPC
 extern void             flush_icache_range( char *start, char *stop );
@@ -234,6 +237,9 @@ xcoff_init_program(void)
 	feval("xcoff load-state >ls.file-type !");
 
 	arch_init_program();
+#ifdef CONFIG_PPC
+	ppc_xcoff_client_init();
+#endif
 	
 	feval("-1 state-valid !");
 }

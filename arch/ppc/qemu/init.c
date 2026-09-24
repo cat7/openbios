@@ -447,6 +447,28 @@ ppc64_patch_handlers(void)
 #pragma GCC diagnostic pop
 #endif
 
+/*
+ * Apple's firmware hands its XCOFF clients (BootX, hence Mac OS X) a 970
+ * whose dcbz clears 32 bytes; Linux sets the size it wants itself only in
+ * hypervisor mode, so leave other clients the reset value.
+ */
+void
+ppc_xcoff_client_init(void)
+{
+    unsigned long pvr, hid5;
+
+    asm volatile("mfpvr %0" : "=r"(pvr));
+    switch (pvr >> 16) {
+    case 0x0039:    /* 970 */
+    case 0x003c:    /* 970FX */
+    case 0x0044:    /* 970MP */
+        asm volatile("mfspr %0, 1014" : "=r"(hid5));
+        hid5 = (hid5 & ~0xc0UL) | 0x80;
+        asm volatile("mtspr 1014, %0" : : "r"(hid5));
+        break;
+    }
+}
+
 static void
 cpu_970_init(const struct cpudef *cpu)
 {

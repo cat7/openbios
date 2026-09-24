@@ -26,6 +26,8 @@ extern int is_apple(void);
 extern int is_oldworld(void);
 extern int is_newworld(void);
 extern int is_u3(void);
+extern void ppc_xcoff_client_init(void);
+extern int ppc_root_address_cells(void);
 extern int has_pmu(void);
 extern int has_adb(void);
 #else
