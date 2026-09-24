@@ -261,6 +261,33 @@ NODE_METHODS(ob_macio) = {
 };
 
 void
+ob_u3_ht_init(void)
+{
+        phandle_t dnode;
+        uint32_t props[4];
+
+        fword("new-device");
+        push_str("ht");
+        fword("device-name");
+
+        dnode = get_cur_dev();
+        set_property(dnode, "device_type", "ht", 3);
+        set_property(dnode, "model", "AAPL,U3", 8);
+        set_property(dnode, "compatible", "u3-ht", 6);
+        props[0] = __cpu_to_be32(0xf2000000);
+        props[1] = __cpu_to_be32(0x02800000);
+        props[2] = __cpu_to_be32(0xf8070000);
+        props[3] = __cpu_to_be32(0x00001000);
+        set_property(dnode, "reg", (char *)&props, sizeof(props));
+        set_int_property(dnode, "#address-cells", 3);
+        set_int_property(dnode, "#size-cells", 2);
+        set_int_property(dnode, "#interrupt-cells", 1);
+        set_int_property(dnode, "clock-frequency", 400000000);
+
+        fword("finish-device");
+}
+
+void
 ob_unin_init(void)
 {
         phandle_t dnode;
