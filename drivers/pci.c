@@ -1956,23 +1956,33 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
         /* patch in openpic interrupt-parent properties */
         snprintf(buf, sizeof(buf), "%s", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/escc/ch-a", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/escc/ch-b", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/escc-legacy/ch-a", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/escc-legacy/ch-b", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         /* QEMU only emulates 2 of the 3 ata buses currently */
         /* On a new world Mac these are not numbered but named by the
@@ -1982,15 +1992,21 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
          * at least the clients we care about */
         snprintf(buf, sizeof(buf), "%s/ata-3@20000", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/ata-3@21000", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/via-cuda", macio);
         target_node = find_dev(buf);
-        set_int_property(target_node, "interrupt-parent", dnode);
+        if (target_node) {
+            set_int_property(target_node, "interrupt-parent", dnode);
+        }
 
         snprintf(buf, sizeof(buf), "%s/via-pmu", macio);
         target_node = find_dev(buf);
