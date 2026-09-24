@@ -1010,6 +1010,11 @@ int macio_heathrow_config_cb (const pci_config_t *config)
 
 int k2_uata_config_cb(const pci_config_t *config)
 {
+        /* device, then DMA interrupt: Apple's driver opens both */
+        u32 props[2] = { 1, 1 };
+
+        set_property(get_cur_dev(), "interrupts", (char *)props,
+                     sizeof(props));
 #ifdef CONFIG_DRIVER_MACIO
         k2_uata_init(config->path, config->assigned[0] & ~0x0000000F);
 #endif
