@@ -397,10 +397,6 @@ ob_macio_keylargo_init(const char *path, phys_addr_t addr)
     macio_ide_init(path, addr, 2);
     openpic_init(path, addr);
 
-    if (is_u3()) {
-        set_property(find_dev(path), "compatible", "K2-Keylargo", 12);
-    }
-
     aliases = find_dev("/aliases");
     set_property(aliases, "mac-io", path, strlen(path) + 1);
 }

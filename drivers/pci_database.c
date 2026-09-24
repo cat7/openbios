@@ -1197,6 +1197,13 @@ static const pci_dev_t misc_pci[] = {
         1, 1, 1,
         &macio_keylargo_config_cb, NULL,
     },
+    /* K2 Mac I/O */
+    {
+        PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_K2_MACIO,
+        "mac-io", "mac-io", "AAPL,Keylargo", "K2-Keylargo\0",
+        1, 1, 1,
+        &macio_keylargo_config_cb, NULL,
+    },
     {
         0xFFFF, 0xFFFF,
         NULL, NULL, NULL, NULL,
