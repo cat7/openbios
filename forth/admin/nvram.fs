@@ -102,10 +102,22 @@ constant config-info.size
 
 \ ------------------------------------------------------------
 
+[IFDEF] CONFIG_PPC
+\ As Apple's firmware and Mac OS X keep them: 0x-prefixed hex, else decimal
+: exec-int-conf ( str len -- value )
+  dup 2 > if
+    over c@ [char] 0 = 2 pick 1+ c@ [char] x = and if
+      2 /string parse-hex exit
+    then
+  then
+  base @ >r decimal 1 parse-ints r> base !
+;
+[ELSE]
 : exec-int-conf ( str len -- value )
   \ fixme
   parse-hex
 ;
+[THEN]
 : check-int-conf ( str len -- str len valid? )
   true
 ;
@@ -333,7 +345,7 @@ s" false"    s" little-endian?"       bool-config
 s" false"    s" real-mode?"           bool-config
 s" -1"       s" real-base"            int-config
 s" -1"       s" real-size"            int-config
-s" 4000000"  s" load-base"          int-config
+s" 0x4000000" s" load-base"          int-config
 s" -1"       s" virt-base"            int-config
 s" -1"       s" virt-size"            int-config
 s" true"     s" vga-ndrv?"            bool-config
