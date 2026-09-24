@@ -147,3 +147,6 @@ variable keyboard-phandle 0 keyboard-phandle !
     3drop 0
   then
 ;
+
+\ Apple firmware's boot word, which Mac OS X's bless puts in boot-command
+: mac-boot ( -- ) " boot" evaluate ;

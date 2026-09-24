@@ -53,7 +53,8 @@ variable DIAG-list
   DIAG-list begin list-get while @ execute repeat
 
   auto-boot? if
-    boot-command evaluate
+    \ a boot-command that fails leaves us at the prompt
+    boot-command ['] evaluate catch if 2drop then
   then
 
   outer-interpreter
