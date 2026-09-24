@@ -510,11 +510,12 @@ escc_add_channel(const char *path, const char *node, phys_addr_t addr,
     OLDWORLD(set_property(dnode, "AAPL,interrupts",
             (char *)&props, 1 * sizeof(cell)));
 
-    props[0] = (0x24) + index;
+    /* the K2 has ch-a on 0x16 and its DBDMA channels one higher */
+    props[0] = is_u3() ? 0x17 - index : 0x24 + index;
     props[1] = 0x1;
-    props[2] = dbdma_offsets[index][0];
+    props[2] = dbdma_offsets[index][0] + is_u3();
     props[3] = 0x0;
-    props[4] = dbdma_offsets[index][1];
+    props[4] = dbdma_offsets[index][1] + is_u3();
     props[5] = 0x0;
     NEWWORLD(set_property(dnode, "interrupts",
              (char *)&props, 6 * sizeof(cell)));

@@ -157,6 +157,12 @@ static const pci_dev_t eth_devices[] = {
         sungem_config_cb, "ethernet",
     },
     {
+        PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_K2_GMAC,
+        NULL, "ethernet", NULL,  "K2-GMAC\0",
+        0, 0, 0,
+        sungem_config_cb, "ethernet",
+    },
+    {
         PCI_VENDOR_ID_SUN, PCI_DEVICE_ID_SUN_HME,
         NULL, "network", NULL, "SUNW,hme\0",
         0, 0, 0,
@@ -407,6 +413,10 @@ static const pci_dev_t hbrg_devices[] = {
 };
 
 static const pci_dev_t PCIbrg_devices[] = {
+    {
+        PCI_VENDOR_ID_AMD, 0x7450, "pci", "pci", NULL, "pci-x\0",
+        3, 2, 1, NULL, NULL,
+    },
     {
         PCI_VENDOR_ID_APPLE, 0x0045, "pci", "pci", NULL, NULL,
         3, 2, 1, NULL, NULL,
@@ -923,6 +933,13 @@ static const pci_dev_t usb_devices[] = {
         PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_KEYL_USB,
         "usb", "usb", NULL,
 	"pci106b,3f\0pciclass,0c0310\0",
+        1, 0, 0,
+        NULL, NULL,
+    },
+    {
+        PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_K2_USB,
+        "usb", "usb", NULL,
+	"pci106b,40\0pciclass,0c0310\0",
         1, 0, 0,
         NULL, NULL,
     },
