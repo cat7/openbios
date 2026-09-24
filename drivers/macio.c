@@ -132,12 +132,44 @@ dump_nvram(void)
 #endif
 
 
+/* The U3's NVRAM is Intel-style flash in 8 KB blocks */
+#define NVRAM_FLASH_SECTOR 0x2000
+
+static void
+macio_nvram_flash_put(char *buf)
+{
+	volatile unsigned char *p = (volatile unsigned char *)nvram;
+	int i, b;
+
+	for (b = 0; b < arch_nvram_size(); b += NVRAM_FLASH_SECTOR) {
+		p[b] = 0x20;
+		p[b] = 0xd0;
+		while (!(p[b] & 0x80)) {
+		}
+		p[b] = 0xff;
+		for (i = b; i < b + NVRAM_FLASH_SECTOR; i++) {
+			if ((unsigned char)buf[i] == 0xff) {
+				continue;
+			}
+			p[i] = 0x40;
+			p[i] = buf[i];
+			while (!(p[i] & 0x80)) {
+			}
+		}
+		p[b] = 0xff;
+	}
+}
+
 void
 macio_nvram_put(char *buf)
 {
 	int i;
         unsigned int it_shift = macio_nvram_shift();
 
+	if (is_u3()) {
+		macio_nvram_flash_put(buf);
+		return;
+	}
 	for (i=0; i < arch_nvram_size(); i++)
 		nvram[i << it_shift] = buf[i];
 #ifdef DUMP_NVRAM
