@@ -48,6 +48,9 @@ extern void setup_mmu(unsigned long code_base);
 
 #define OF_CODE_START	0xfff00000UL
 #define OF_CODE_SIZE    0x00100000
+/* kept free by the linker script for the NVRAM */
+#define NVRAM_START     0xfff04000UL
+#define NVRAM_END       0xfff08000UL
 #define IO_BASE			0x80000000UL
 
 #ifdef __powerpc64__
@@ -276,6 +279,12 @@ static phys_addr_t
 ea_to_phys(unsigned long ea, ucell *mode)
 {
     phys_addr_t phys;
+
+    if (ea >= NVRAM_START && ea < NVRAM_END) {
+        /* the NVRAM hole in the ROM window is the device itself */
+        *mode = ofmem_arch_io_translation_mode(ea);
+        return ea;
+    }
 
     if (ea >= OF_CODE_START && ea <= 0xffffffffUL) {
         /* ROM into RAM */
