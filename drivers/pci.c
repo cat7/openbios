@@ -1664,6 +1664,10 @@ static void ob_configure_pci_bridge(pci_addr addr,
     pci_config_write16(addr, PCI_IO_LIMIT_UPPER, (io_scan_limit >> 16));
     pci_config_write8(addr, PCI_IO_LIMIT, (io_scan_limit >> 8) & ~(0xf));
 
+    /* Likewise keep memory behind the bridge reachable while the devices'
+       configuration callbacks run; the real limit is set below. */
+    pci_config_write16(addr, PCI_MEMORY_LIMIT, 0xfff0);
+
     /* make pci bridge parent device, prepare for recursion */
     
 #if defined(CONFIG_SPARC64)
