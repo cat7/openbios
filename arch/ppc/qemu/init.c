@@ -1219,11 +1219,16 @@ arch_of_init(void)
                     gpio_ph = find_dev(buf);
                 }
                 if (gpio_ph) {
-                    /* extint-gpio3/4/15/16 */
+                    /* KeyLargo extint-gpio3/4/15/16; K2 gpio7/8 */
                     static const uint32_t soft_reset_gpio[4] = {
                         0x5b, 0x5c, 0x67, 0x68
                     };
-                    uint32_t reset_offset = soft_reset_gpio[i < 4 ? i : 1];
+                    static const uint32_t k2_soft_reset_gpio[2] = {
+                        0x71, 0x72
+                    };
+                    uint32_t reset_offset = is_u3() ?
+                                            k2_soft_reset_gpio[i & 1] :
+                                            soft_reset_gpio[i < 4 ? i : 1];
 
                     PUSH(gpio_ph);
                     fword("encode-int");
@@ -1245,7 +1250,7 @@ arch_of_init(void)
                     push_str("gpio-value");
                     fword("property");
 
-                    if (i > 0) {
+                    if (i > 0 && !is_u3()) {
                         PUSH(0x73);
                         fword("encode-int");
                         push_str("timebase-enable");
