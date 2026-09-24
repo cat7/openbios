@@ -1536,9 +1536,16 @@ static void ob_scan_pci_bus(int *bus_num, unsigned long *mem_base,
 {
 	int devnum, fn, is_multi;
 
+	int i;
+
 	PCI_DPRINTF("\nScanning bus %d at %s...\n", bus, path);
 
-	for (devnum = 0; devnum < 32; devnum++) {
+	for (i = 0; i < 32; i++) {
+		/* the U3 numbers the K2 buses (HT devices 3-7) before PCI-X */
+		devnum = i;
+		if (arch->cfg_ht && bus == 0 && i >= 1 && i <= 7) {
+			devnum = i <= 5 ? i + 2 : i - 5;
+		}
 		is_multi = 0;
 		for (fn = 0; fn==0 || (is_multi && fn<8); fn++) {
 		    ob_configure_pci_device(path, bus_num, mem_base, io_base,
@@ -2108,49 +2115,37 @@ static void ob_pci_bus_set_interrupt_map(phandle_t pcibus, phandle_t dnode,
     }
 }
 
-/* MPIC inputs of the devices behind each K2 HT-PCI bridge, by slot */
+/* MPIC inputs of the slots behind each HT bridge, by the bridge's HT slot */
 static const struct {
-    uint16_t bridge;
+    uint8_t ht_slot;
     uint8_t slot;
     uint8_t irq;
-} k2_ht_pci_irqs[] = {
-    { 0x0045, 8, 0x1b }, { 0x0045, 9, 0x1c },
-    { 0x0046, 11, 0x3f },
-    { 0x0047, 13, 0x27 }, { 0x0047, 14, 0x28 },
-    { 0x0048, 15, 0x29 },
-    { 0x0049, 12, 0x11 },
+} u3_ht_pci_irqs[] = {
+    { 1, 2, 0x34 }, { 1, 3, 0x35 },
+    { 2, 4, 0x36 },
+    { 3, 8, 0x1b }, { 3, 9, 0x1c },
+    { 4, 11, 0x3f },
+    { 5, 13, 0x27 }, { 5, 14, 0x28 },
+    { 6, 15, 0x29 },
+    { 7, 12, 0x11 },
 };
 
-static void ob_k2_set_interrupt_map(phandle_t bridge, int did, phandle_t mpic)
+static void ob_u3_ht_set_interrupt_map(phandle_t bridge, int ht_slot,
+                                       phandle_t mpic)
 {
-    phandle_t child;
-    u32 props[7 * 4], hi;
-    int i, ncells = 0, len;
-    u32 *reg;
+    u32 props[7 * 4];
+    int i, ncells = 0;
 
-    PUSH(bridge);
-    fword("child");
-    child = POP();
-    while (child) {
-        reg = (u32 *)get_property(child, "reg", &len);
-        if (reg && len >= 4) {
-            hi = reg[0] & 0x0000f800;
-            for (i = 0; i < sizeof(k2_ht_pci_irqs) / sizeof(k2_ht_pci_irqs[0]); i++) {
-                if (k2_ht_pci_irqs[i].bridge == did &&
-                    k2_ht_pci_irqs[i].slot == (hi >> 11) && ncells < 7 * 3) {
-                    props[ncells++] = hi;
-                    props[ncells++] = 0;
-                    props[ncells++] = 0;
-                    props[ncells++] = 0;
-                    props[ncells++] = mpic;
-                    props[ncells++] = k2_ht_pci_irqs[i].irq;
-                    props[ncells++] = 1;
-                }
-            }
+    for (i = 0; i < sizeof(u3_ht_pci_irqs) / sizeof(u3_ht_pci_irqs[0]); i++) {
+        if (u3_ht_pci_irqs[i].ht_slot == ht_slot && ncells < 7 * 3) {
+            props[ncells++] = u3_ht_pci_irqs[i].slot << 11;
+            props[ncells++] = 0;
+            props[ncells++] = 0;
+            props[ncells++] = 0;
+            props[ncells++] = mpic;
+            props[ncells++] = u3_ht_pci_irqs[i].irq;
+            props[ncells++] = 1;
         }
-        PUSH(child);
-        fword("peer");
-        child = POP();
     }
 
     if (ncells) {
@@ -2172,7 +2167,8 @@ int ob_pci_ht_init(const pci_arch_t *ht)
     unsigned long mem_base, io_base;
     phandle_t host, bridge, mpic;
     char path[1] = "";
-    int bus = 0, did, len;
+    int bus = 0, len;
+    u32 *reg;
 
     arch = ht;
     mem_base = arch->pci_mem_base;
@@ -2185,10 +2181,9 @@ int ob_pci_ht_init(const pci_arch_t *ht)
     fword("child");
     bridge = POP();
     while (bridge && mpic) {
-        did = get_int_property(bridge, "device-id", &len);
-        if (len && did >= PCI_DEVICE_ID_APPLE_K2_HT_PCI_1 &&
-            did <= PCI_DEVICE_ID_APPLE_K2_HT_PCI_5) {
-            ob_k2_set_interrupt_map(bridge, did, mpic);
+        reg = (u32 *)get_property(bridge, "reg", &len);
+        if (reg && len >= 4) {
+            ob_u3_ht_set_interrupt_map(bridge, (reg[0] >> 11) & 0x1f, mpic);
         }
         PUSH(bridge);
         fword("peer");
