@@ -220,6 +220,7 @@ extern const pci_arch_t *arch;
 #define PCI_DEVICE_ID_APPLE_K2_MACIO     0x0041
 #define PCI_DEVICE_ID_APPLE_K2_USB       0x0040
 #define PCI_DEVICE_ID_APPLE_K2_GMAC      0x004c
+#define PCI_DEVICE_ID_APPLE_K2_ATA100    0x0043
 #define PCI_DEVICE_ID_APPLE_KEYL_USB     0x003f
 #define PCI_DEVICE_ID_APPLE_U3_AGP       0x004b
 #define PCI_DEVICE_ID_APPLE_U3_HT        0x0057

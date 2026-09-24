@@ -394,7 +394,10 @@ ob_macio_keylargo_init(const char *path, phys_addr_t addr)
     }
 
     escc_init(path, addr);
-    macio_ide_init(path, addr, 2);
+    /* the K2's ATA is a separate PCI function */
+    if (!is_u3()) {
+        macio_ide_init(path, addr, 2);
+    }
     openpic_init(path, addr);
 
     aliases = find_dev("/aliases");

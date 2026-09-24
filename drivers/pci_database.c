@@ -1240,6 +1240,13 @@ static const pci_dev_t misc_pci[] = {
         1, 1, 1,
         &macio_keylargo_config_cb, NULL,
     },
+    /* K2 ATA-100 */
+    {
+        PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_K2_ATA100,
+        "ata", "ata-6", "ata-6", "K2-UATA\0",
+        1, 0, 0,
+        &k2_uata_config_cb, NULL,
+    },
     /* K2 Mac I/O */
     {
         PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_K2_MACIO,

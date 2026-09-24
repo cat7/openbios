@@ -1008,6 +1008,14 @@ int macio_heathrow_config_cb (const pci_config_t *config)
 	return 0;
 }
 
+int k2_uata_config_cb(const pci_config_t *config)
+{
+#ifdef CONFIG_DRIVER_MACIO
+        k2_uata_init(config->path, config->assigned[0] & ~0x0000000F);
+#endif
+        return 0;
+}
+
 int macio_keylargo_config_cb (const pci_config_t *config)
 {
         pci_set_ranges(config);

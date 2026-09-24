@@ -1545,6 +1545,66 @@ macio_ide_outsw(struct ide_channel *chan,
 #define MACIO_IDE_OFFSET	0x00020000
 #define MACIO_IDE_SIZE		0x00001000
 
+/* Child nodes for the drives present on a channel */
+static void ob_ide_drive_nodes(struct ide_channel *chan)
+{
+	char nodebuff[128];
+	phandle_t dnode;
+	int j;
+
+	for (j = 0; j < 2; j++) {
+		struct ide_drive *drive = &chan->drives[j];
+                        const char *media = "UNKNOWN";
+
+		if (!drive->present)
+			continue;
+
+		IDE_DPRINTF("    drive%d [ATA%s ", j,
+		            drive->type == ide_type_atapi ? "PI" : "");
+		switch (drive->media) {
+			case ide_media_floppy:
+				media = "floppy";
+				break;
+			case ide_media_cdrom:
+				media = "cdrom";
+				break;
+			case ide_media_optical:
+				media = "mo";
+				break;
+			case ide_media_disk:
+				media = "disk";
+				break;
+		}
+		IDE_DPRINTF("%s]: %s\n", media, drive->model);
+
+		fword("new-device");
+		dnode = get_cur_dev();
+		set_int_property(dnode, "reg", j);
+		push_str(media);
+		fword("device-name");
+
+		push_str("block");
+		fword("device-type");
+
+		PUSH(pointer2cell(drive));
+		feval("value drive");
+
+		BIND_NODE_METHODS(dnode, ob_ide);
+		fword("is-deblocker");
+
+		fword("finish-device");
+
+		/* create aliases */
+		snprintf(nodebuff, sizeof(nodebuff), "%s",
+			 get_path_from_ph(dnode));
+		set_ide_alias(nodebuff);
+		if (drive->media == ide_media_cdrom)
+			set_cd_alias(nodebuff);
+		if (drive->media == ide_media_disk)
+			set_hd_alias(nodebuff);
+	}
+}
+
 int macio_ide_init(const char *path, uint32_t addr, int nb_channels)
 {
 	int i, j;
@@ -1679,60 +1739,53 @@ int macio_ide_init(const char *path, uint32_t addr, int nb_channels)
 
 		BIND_NODE_METHODS(dnode, ob_ide_ctrl);
 
-		for (j = 0; j < 2; j++) {
-			struct ide_drive *drive = &chan->drives[j];
-                        const char *media = "UNKNOWN";
-
-			if (!drive->present)
-				continue;
-
-			IDE_DPRINTF("    drive%d [ATA%s ", j,
-			            drive->type == ide_type_atapi ? "PI" : "");
-			switch (drive->media) {
-				case ide_media_floppy:
-					media = "floppy";
-					break;
-				case ide_media_cdrom:
-					media = "cdrom";
-					break;
-				case ide_media_optical:
-					media = "mo";
-					break;
-				case ide_media_disk:
-					media = "disk";
-					break;
-			}
-			IDE_DPRINTF("%s]: %s\n", media, drive->model);
-
-			fword("new-device");
-			dnode = get_cur_dev();
-			set_int_property(dnode, "reg", j);
-			push_str(media);
-			fword("device-name");
-
-			push_str("block");
-			fword("device-type");
-
-			PUSH(pointer2cell(drive));
-			feval("value drive");
-
-			BIND_NODE_METHODS(dnode, ob_ide);
-			fword("is-deblocker");
-
-			fword("finish-device");
-
-			/* create aliases */
-			snprintf(nodebuff, sizeof(nodebuff), "%s",
-				 get_path_from_ph(dnode));
-			set_ide_alias(nodebuff);
-			if (drive->media == ide_media_cdrom)
-				set_cd_alias(nodebuff);
-			if (drive->media == ide_media_disk)
-				set_hd_alias(nodebuff);
-		}
+		ob_ide_drive_nodes(chan);
 
 		fword("finish-device");
 	}
+
+	return 0;
+}
+
+/* K2 ATA-100: the PCI node is the controller; taskfile at BAR + 0x2000 */
+int k2_uata_init(const char *path, uint32_t bar)
+{
+	phandle_t dnode = get_cur_dev();
+	struct ide_channel *chan;
+	int j;
+
+	chan = malloc(sizeof(struct ide_channel));
+	chan->mmio = bar + 0x2000;
+	chan->obide_inb = macio_ide_inb;
+	chan->obide_insw = macio_ide_insw;
+	chan->obide_outb = macio_ide_outb;
+	chan->obide_outsw = macio_ide_outsw;
+	chan->selected = -1;
+	chan->present = 1;
+
+	for (j = 0; j < 2; j++) {
+		chan->drives[j].present = 0;
+		chan->drives[j].unit = j;
+		chan->drives[j].channel = chan;
+		chan->drives[j].bs = 512;
+		chan->drives[j].nr = j;
+	}
+
+	ob_ide_probe(chan);
+	if (!chan->present) {
+		free(chan);
+		return 0;
+	}
+	ob_ide_identify_drives(chan);
+
+	PUSH(pointer2cell(chan));
+	feval("value chan");
+
+	set_int_property(dnode, "#address-cells", 1);
+	set_int_property(dnode, "#size-cells", 0);
+	BIND_NODE_METHODS(dnode, ob_ide_ctrl);
+
+	ob_ide_drive_nodes(chan);
 
 	return 0;
 }
