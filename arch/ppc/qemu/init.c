@@ -1237,6 +1237,24 @@ arch_of_init(void)
         }
     }
 
+#ifdef CONFIG_DRIVER_PCI
+    if (is_u3()) {
+        /* the CPUs take their interrupts from the K2 MPIC */
+        phandle_t mpic = dt_iterate_type(0, "open-pic");
+        phandle_t ph;
+
+        PUSH(find_dev("/cpus"));
+        fword("child");
+        ph = POP();
+        while (ph && mpic) {
+            set_int_property(ph, "AAPL,parentIC", mpic);
+            PUSH(ph);
+            fword("peer");
+            ph = POP();
+        }
+    }
+#endif
+
     printk("CPU type %s", cpu->name);
     if (g_num_cpus > 1) {
         printk(" x%d (SMP)", g_num_cpus);
