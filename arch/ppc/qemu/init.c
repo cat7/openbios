@@ -968,11 +968,12 @@ arch_of_init(void)
     case ARCH_MAC99_U3:
         /* The NewWorld NVRAM is not located in the MacIO device */
         macio_nvram_init("/", 0);
-        ob_pci_init();
-        ob_unin_init();
+        /* the U3's mac-io is on HyperTransport; set it up first */
         if (is_u3()) {
             ob_pci_ht_init(&u3_ht_arch);
         }
+        ob_pci_init();
+        ob_unin_init();
         break;
     default:
         ob_pci_init();

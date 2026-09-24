@@ -1927,7 +1927,8 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
     /* Set the host bridge interrupt map, returning the phandle
        of the interrupt controller */
     phandle_t dnode, target_node;
-    char *path, buf[256];
+    char *path, *macio, buf[512], macio_buf[256];
+    int len;
 
     /* Oldworld macs do interrupt maps differently */
     if (is_oldworld()) {
@@ -1938,24 +1939,31 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
     dnode = dt_iterate_type(0, "open-pic");
     path = get_path_from_ph(host);
     if (dnode && path) {
+        /* the mac-io may be behind a bridge */
+        macio = get_property(find_dev("/aliases"), "mac-io", &len);
+        if (!macio) {
+            snprintf(macio_buf, sizeof(macio_buf), "%s/mac-io", path);
+            macio = macio_buf;
+        }
+
         /* patch in openpic interrupt-parent properties */
-        snprintf(buf, sizeof(buf), "%s/mac-io", path);
+        snprintf(buf, sizeof(buf), "%s", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/escc/ch-a", path);
+        snprintf(buf, sizeof(buf), "%s/escc/ch-a", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/escc/ch-b", path);
+        snprintf(buf, sizeof(buf), "%s/escc/ch-b", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/escc-legacy/ch-a", path);
+        snprintf(buf, sizeof(buf), "%s/escc-legacy/ch-a", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/escc-legacy/ch-b", path);
+        snprintf(buf, sizeof(buf), "%s/escc-legacy/ch-b", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
@@ -1965,31 +1973,31 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
          * On g3beige they all called just ide.
          * We take 2 x ata-3 buses which seems to work for
          * at least the clients we care about */
-        snprintf(buf, sizeof(buf), "%s/mac-io/ata-3@20000", path);
+        snprintf(buf, sizeof(buf), "%s/ata-3@20000", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/ata-3@21000", path);
+        snprintf(buf, sizeof(buf), "%s/ata-3@21000", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/via-cuda", path);
+        snprintf(buf, sizeof(buf), "%s/via-cuda", macio);
         target_node = find_dev(buf);
         set_int_property(target_node, "interrupt-parent", dnode);
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/via-pmu", path);
+        snprintf(buf, sizeof(buf), "%s/via-pmu", macio);
         target_node = find_dev(buf);
         if (target_node) {
             set_int_property(target_node, "interrupt-parent", dnode);
         }
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/gpio/extint-gpio1", path);
+        snprintf(buf, sizeof(buf), "%s/gpio/extint-gpio1", macio);
         target_node = find_dev(buf);
         if (target_node) {
             set_int_property(target_node, "interrupt-parent", dnode);
         }
 
-        snprintf(buf, sizeof(buf), "%s/mac-io/gpio/programmer-switch", path);
+        snprintf(buf, sizeof(buf), "%s/gpio/programmer-switch", macio);
         target_node = find_dev(buf);
         if (target_node) {
             set_int_property(target_node, "interrupt-parent", dnode);
@@ -2100,18 +2108,92 @@ static void ob_pci_bus_set_interrupt_map(phandle_t pcibus, phandle_t dnode,
     }
 }
 
+/* MPIC inputs of the devices behind each K2 HT-PCI bridge, by slot */
+static const struct {
+    uint16_t bridge;
+    uint8_t slot;
+    uint8_t irq;
+} k2_ht_pci_irqs[] = {
+    { 0x0045, 8, 0x1b }, { 0x0045, 9, 0x1c },
+    { 0x0046, 11, 0x3f },
+    { 0x0047, 13, 0x27 }, { 0x0047, 14, 0x28 },
+    { 0x0048, 15, 0x29 },
+    { 0x0049, 12, 0x11 },
+};
+
+static void ob_k2_set_interrupt_map(phandle_t bridge, int did, phandle_t mpic)
+{
+    phandle_t child;
+    u32 props[7 * 4], hi;
+    int i, ncells = 0, len;
+    u32 *reg;
+
+    PUSH(bridge);
+    fword("child");
+    child = POP();
+    while (child) {
+        reg = (u32 *)get_property(child, "reg", &len);
+        if (reg && len >= 4) {
+            hi = reg[0] & 0x0000f800;
+            for (i = 0; i < sizeof(k2_ht_pci_irqs) / sizeof(k2_ht_pci_irqs[0]); i++) {
+                if (k2_ht_pci_irqs[i].bridge == did &&
+                    k2_ht_pci_irqs[i].slot == (hi >> 11) && ncells < 7 * 3) {
+                    props[ncells++] = hi;
+                    props[ncells++] = 0;
+                    props[ncells++] = 0;
+                    props[ncells++] = 0;
+                    props[ncells++] = mpic;
+                    props[ncells++] = k2_ht_pci_irqs[i].irq;
+                    props[ncells++] = 1;
+                }
+            }
+        }
+        PUSH(child);
+        fword("peer");
+        child = POP();
+    }
+
+    if (ncells) {
+        set_property(bridge, "interrupt-map", (char *)props,
+                     ncells * sizeof(props[0]));
+        props[0] = 0x0000f800;
+        props[1] = 0;
+        props[2] = 0;
+        props[3] = 0;
+        set_property(bridge, "interrupt-map-mask", (char *)props,
+                     4 * sizeof(props[0]));
+    }
+}
+
 /* A second, HyperTransport, PCI domain; its host node has no ranges */
 int ob_pci_ht_init(const pci_arch_t *ht)
 {
     const pci_arch_t *saved = arch;
     unsigned long mem_base, io_base;
+    phandle_t host, bridge, mpic;
     char path[1] = "";
-    int bus = 0;
+    int bus = 0, did, len;
 
     arch = ht;
     mem_base = arch->pci_mem_base;
     io_base = 0x400;
-    ob_configure_pci_device(path, &bus, &mem_base, &io_base, 0, 0, 0, NULL);
+    host = ob_configure_pci_device(path, &bus, &mem_base, &io_base,
+                                   0, 0, 0, NULL);
+
+    mpic = dt_iterate_type(0, "open-pic");
+    PUSH(host);
+    fword("child");
+    bridge = POP();
+    while (bridge && mpic) {
+        did = get_int_property(bridge, "device-id", &len);
+        if (len && did >= PCI_DEVICE_ID_APPLE_K2_HT_PCI_1 &&
+            did <= PCI_DEVICE_ID_APPLE_K2_HT_PCI_5) {
+            ob_k2_set_interrupt_map(bridge, did, mpic);
+        }
+        PUSH(bridge);
+        fword("peer");
+        bridge = POP();
+    }
     arch = saved;
 
     return 0;
