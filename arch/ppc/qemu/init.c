@@ -199,6 +199,23 @@ static const pci_arch_t known_arch[] = {
         .irqs = { 21, 22, 23, 24 }
     },
 };
+
+/* The U3's HyperTransport domain */
+static const pci_arch_t u3_ht_arch = {
+        .name = "MAC99_U3_HT",
+        .vendor_id = PCI_VENDOR_ID_APPLE,
+        .device_id = PCI_DEVICE_ID_APPLE_U3_HT,
+        .cfg_addr = 0xf8070000,
+        .cfg_data = 0xf2000000,
+        .cfg_base = 0xf2000000,
+        .cfg_len = 0x02800000,
+        .host_pci_base = 0x0,
+        .pci_mem_base = 0x80000000,
+        .mem_len = 0x10000000,
+        .io_base = 0xf4000000,
+        .io_len = 0x00400000,
+        .cfg_ht = 1,
+};
 unsigned long isa_io_base;
 
 extern struct _console_ops mac_console_ops, prep_console_ops;
@@ -954,7 +971,7 @@ arch_of_init(void)
         ob_pci_init();
         ob_unin_init();
         if (is_u3()) {
-            ob_u3_ht_init();
+            ob_pci_ht_init(&u3_ht_arch);
         }
         break;
     default:

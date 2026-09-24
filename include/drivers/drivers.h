@@ -16,6 +16,8 @@
 #ifdef CONFIG_DRIVER_PCI
 /* drivers/pci.c */
 int ob_pci_init(void);
+struct pci_arch_t;
+int ob_pci_ht_init(const struct pci_arch_t *ht);
 #endif
 
 #if defined(CONFIG_DRIVER_PCI) || defined(CONFIG_DRIVER_ESCC)
@@ -152,7 +154,6 @@ void macio_nvram_put(char *buf);
 void macio_nvram_get(char *buf);
 void macio_nvram_init(const char *path, phys_addr_t addr);
 void ob_unin_init(void);
-void ob_u3_ht_init(void);
 
 /* drivers/timer.c */
 void setup_timers(void);

@@ -36,6 +36,7 @@ struct pci_arch_t {
 	unsigned long io_len;
 	pci_range_t host_ranges[4];
 	uint8_t irqs[4];
+	int cfg_ht; /* HyperTransport configuration window at cfg_data */
 };
 
 extern const pci_arch_t *arch;
@@ -219,6 +220,9 @@ extern const pci_arch_t *arch;
 #define PCI_DEVICE_ID_APPLE_K2_MACIO     0x0041
 #define PCI_DEVICE_ID_APPLE_KEYL_USB     0x003f
 #define PCI_DEVICE_ID_APPLE_U3_AGP       0x004b
+#define PCI_DEVICE_ID_APPLE_U3_HT        0x0057
+#define PCI_DEVICE_ID_APPLE_K2_HT_PCI_1  0x0045
+#define PCI_DEVICE_ID_APPLE_K2_HT_PCI_5  0x0049
 
 #define PCI_VENDOR_ID_SUN                0x108e
 #define PCI_DEVICE_ID_SUN_EBUS           0x1000

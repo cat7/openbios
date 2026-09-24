@@ -618,6 +618,22 @@ int sabre_config_cb(const pci_config_t *config)
     return sabre_configure(get_cur_dev());
 }
 
+int u3_ht_config_cb(const pci_config_t *config)
+{
+	phandle_t dev = get_cur_dev();
+	u32 props[4];
+
+	/* configuration window, then the host's own registers */
+	props[0] = arch->cfg_base;
+	props[1] = arch->cfg_len;
+	props[2] = arch->cfg_addr;
+	props[3] = 0x1000;
+	set_property(dev, "reg", (char *)props, sizeof(props));
+	set_int_property(dev, "clock-frequency", 400000000);
+
+	return 0;
+}
+
 int bridge_config_cb(const pci_config_t *config)
 {
 	phandle_t aliases;
@@ -2078,6 +2094,23 @@ static void ob_pci_bus_set_interrupt_map(phandle_t pcibus, phandle_t dnode,
         props[3] = 0x7;
         set_property(pcibus, "interrupt-map-mask", (char *)props, 4 * sizeof(props[0]));
     }
+}
+
+/* A second, HyperTransport, PCI domain; its host node has no ranges */
+int ob_pci_ht_init(const pci_arch_t *ht)
+{
+    const pci_arch_t *saved = arch;
+    unsigned long mem_base, io_base;
+    char path[1] = "";
+    int bus = 0;
+
+    arch = ht;
+    mem_base = arch->pci_mem_base;
+    io_base = 0x400;
+    ob_configure_pci_device(path, &bus, &mem_base, &io_base, 0, 0, 0, NULL);
+    arch = saved;
+
+    return 0;
 }
 
 int ob_pci_init(void)

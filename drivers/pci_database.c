@@ -351,6 +351,12 @@ static const pci_subclass_t mem_subclass[] = {
 
 static const pci_dev_t hbrg_devices[] = {
     {
+        PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_U3_HT, "ht",
+        "ht", "AAPL,U3", "u3-ht\0",
+        3, 2, 1,
+        u3_ht_config_cb, NULL,
+    },
+    {
         PCI_VENDOR_ID_APPLE, PCI_DEVICE_ID_APPLE_U3_AGP, NULL,
         "pci", "AAPL,UniNorth", "u3-agp\0",
         3, 2, 1,
@@ -401,6 +407,26 @@ static const pci_dev_t hbrg_devices[] = {
 };
 
 static const pci_dev_t PCIbrg_devices[] = {
+    {
+        PCI_VENDOR_ID_APPLE, 0x0045, "pci", "pci", NULL, NULL,
+        3, 2, 1, NULL, NULL,
+    },
+    {
+        PCI_VENDOR_ID_APPLE, 0x0046, "pci", "pci", NULL, NULL,
+        3, 2, 1, NULL, NULL,
+    },
+    {
+        PCI_VENDOR_ID_APPLE, 0x0047, "pci", "pci", NULL, NULL,
+        3, 2, 1, NULL, NULL,
+    },
+    {
+        PCI_VENDOR_ID_APPLE, 0x0048, "pci", "pci", NULL, NULL,
+        3, 2, 1, NULL, NULL,
+    },
+    {
+        PCI_VENDOR_ID_APPLE, 0x0049, "pci", "pci", NULL, NULL,
+        3, 2, 1, NULL, NULL,
+    },
     {
         PCI_VENDOR_ID_DEC, PCI_DEVICE_ID_DEC_21154, NULL,
         "pci-bridge", "DEV,21154", "DEV,21154\0pci-bridge\0",
