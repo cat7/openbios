@@ -22,6 +22,7 @@
 #include "kernel.h"
 #include "mmutypes.h"
 #include "asm/processor.h"
+#include "drivers/drivers.h"
 
 #define BIT(n)		(1U << (31 - (n)))
 
@@ -141,21 +142,20 @@ retain_t *ofmem_arch_get_retained(void)
     return NULL;
 }
 
+
+
 int ofmem_arch_get_physaddr_cellsize(void)
 {
-#ifdef CONFIG_PPC64
-    return 2;
-#else
-    return 1;
-#endif
+    return ppc_root_address_cells();
 }
 
 int ofmem_arch_encode_physaddr(ucell *p, phys_addr_t value)
 {
     int n = 0;
-#ifdef CONFIG_PPC64
-    p[n++] = value >> 32;
-#endif
+
+    if (ppc_root_address_cells() == 2) {
+        p[n++] = (uint64_t)value >> 32;
+    }
     p[n++] = value;
     return n;
 }

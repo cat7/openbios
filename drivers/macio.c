@@ -95,9 +95,18 @@ void macio_nvram_init(const char *path, phys_addr_t addr)
 	snprintf(buf, sizeof(buf), "%s", path);
 	dnode = nvram_init(buf);
 	set_int_property(dnode, "#bytes", arch_nvram_size() );
-	props[0] = __cpu_to_be32(nvram_offset);
-	props[1] = __cpu_to_be32(nvram_size);
-	set_property(dnode, "reg", (char *)&props, sizeof(props));
+	if (is_u3()) {
+		int reg[3];
+
+		reg[0] = 0;
+		reg[1] = __cpu_to_be32(nvram_offset);
+		reg[2] = __cpu_to_be32(nvram_size);
+		set_property(dnode, "reg", (char *)&reg, sizeof(reg));
+	} else {
+		props[0] = __cpu_to_be32(nvram_offset);
+		props[1] = __cpu_to_be32(nvram_size);
+		set_property(dnode, "reg", (char *)&props, sizeof(props));
+	}
 	set_property(dnode, "device_type", "nvram", 6);
 	NEWWORLD(set_property(dnode, "compatible", "nvram,flash", 12));
 
@@ -311,9 +320,18 @@ ob_unin_init(void)
         }
         /* PowerMac7,3: U3 2.3 */
         set_int_property(dnode, "device-rev", is_u3() ? 0xb3 : 7);
-        props[0] = __cpu_to_be32(0xf8000000);
-        props[1] = __cpu_to_be32(0x1000000);
-        set_property(dnode, "reg", (char *)&props, sizeof(props));
+        if (is_u3()) {
+                int reg[3];
+
+                reg[0] = 0;
+                reg[1] = __cpu_to_be32(0xf8000000);
+                reg[2] = __cpu_to_be32(0x1000000);
+                set_property(dnode, "reg", (char *)&reg, sizeof(reg));
+        } else {
+                props[0] = __cpu_to_be32(0xf8000000);
+                props[1] = __cpu_to_be32(0x1000000);
+                set_property(dnode, "reg", (char *)&props, sizeof(props));
+        }
 
         fword("finish-device");
 }

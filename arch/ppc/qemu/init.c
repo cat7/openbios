@@ -265,14 +265,25 @@ entry(void)
     }
 }
 
+/* Physical addresses take two cells on a 64-bit machine, as on a G5 */
+int
+ppc_root_address_cells(void)
+{
+#ifdef CONFIG_PPC64
+    return 2;
+#else
+    return machine_id == ARCH_MAC99_U3 ? 2 : 1;
+#endif
+}
+
 /* -- phys.lo ... phys.hi */
 static void
 push_physaddr(phys_addr_t value)
 {
     PUSH(value);
-#ifdef CONFIG_PPC64
-    PUSH(value >> 32);
-#endif
+    if (ppc_root_address_cells() == 2) {
+        PUSH((uint64_t)value >> 32);
+    }
 }
 
 /* From drivers/timer.c */
@@ -972,6 +983,16 @@ arch_of_init(void)
     openbios_init();
     modules_init();
     setup_timers();
+
+    if (ppc_root_address_cells() == 2) {
+        u32 props[3];
+
+        set_int_property(find_dev("/"), "#address-cells", 2);
+        props[0] = 0;
+        props[1] = 0xff800000;
+        props[2] = 0;
+        set_property(find_dev("/rom"), "reg", (char *)props, sizeof(props));
+    }
 
     bind_func("ppc-dma-alloc", dma_alloc);
     feval("['] ppc-dma-alloc to (dma-alloc)");

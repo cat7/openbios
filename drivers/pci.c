@@ -621,13 +621,15 @@ int sabre_config_cb(const pci_config_t *config)
 int u3_ht_config_cb(const pci_config_t *config)
 {
 	phandle_t dev = get_cur_dev();
-	u32 props[4];
+	u32 props[6];
 
 	/* configuration window, then the host's own registers */
-	props[0] = arch->cfg_base;
-	props[1] = arch->cfg_len;
-	props[2] = arch->cfg_addr;
-	props[3] = 0x1000;
+	props[0] = 0;
+	props[1] = arch->cfg_base;
+	props[2] = arch->cfg_len;
+	props[3] = 0;
+	props[4] = arch->cfg_addr;
+	props[5] = 0x1000;
 	set_property(dev, "reg", (char *)props, sizeof(props));
 	set_int_property(dev, "clock-frequency", 400000000);
 
