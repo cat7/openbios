@@ -1043,7 +1043,8 @@ arch_of_init(void)
 
     ram_size = ofmem->ramsize;
 
-    printk("Memory: %lldM\n", ram_size / 1024 / 1024);
+    printk("Memory: %lldM\n",
+           (ram_size + fw_cfg_read_i64(FW_CFG_PPC_HIGH_RAM_SIZE)) / 1024 / 1024);
 
     fw_cfg_read(FW_CFG_UUID, qemu_uuid, 16);
 
