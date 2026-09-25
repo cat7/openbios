@@ -1183,6 +1183,32 @@ arch_of_init(void)
     PUSH(ram_size & 0xffffffff);
     fword("encode-int");
     fword("encode+");
+
+    /* U3: RAM beyond the first 2 GiB continues at 4 GiB */
+    if (ppc_root_address_cells() == 2) {
+        uint64_t high = fw_cfg_read_i64(FW_CFG_PPC_HIGH_RAM_SIZE);
+        uint64_t base = 0x100000000ULL;
+        ucell avail[48];
+        int n = 0;
+
+        while (high && n + 3 <= 48) {
+            uint32_t chunk = high > 0x80000000ULL ? 0x80000000 : high;
+
+            PUSH((uint32_t)base);
+            PUSH(base >> 32);
+            fword("encode-phys");
+            fword("encode+");
+            PUSH(chunk);
+            fword("encode-int");
+            fword("encode+");
+            avail[n++] = base >> 32;
+            avail[n++] = (uint32_t)base;
+            avail[n++] = chunk;
+            base += chunk;
+            high -= chunk;
+        }
+        ofmem_set_extra_available(avail, n);
+    }
     push_str("reg");
     fword("property");
 

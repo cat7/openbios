@@ -69,6 +69,7 @@ extern retain_t*	ofmem_arch_get_retained(void);
 extern int		ofmem_arch_get_physaddr_cellsize(void);
 extern int		ofmem_arch_encode_physaddr(ucell *p, phys_addr_t value);
 extern int		ofmem_arch_get_available_entry_size(phandle_t ph);
+extern void		ofmem_set_extra_available(const ucell *cells, int ncells);
 extern void 		ofmem_arch_create_available_entry(phandle_t ph, ucell *availentry, phys_addr_t start, ucell size);
 extern int 		ofmem_arch_get_translation_entry_size(void);
 extern void 		ofmem_arch_create_translation_entry(ucell *transentry, translation_t *t);

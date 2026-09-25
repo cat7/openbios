@@ -276,6 +276,20 @@ static void ofmem_update_mmu_translations( void )
 }
 
 
+/* /memory "available" entries beyond the firmware's own RAM, pre-encoded */
+#define OFMEM_EXTRA_AVAIL_CELLS 48
+static ucell s_extra_avail[OFMEM_EXTRA_AVAIL_CELLS];
+static int s_extra_avail_cells;
+
+void ofmem_set_extra_available(const ucell *cells, int ncells)
+{
+	if (ncells > OFMEM_EXTRA_AVAIL_CELLS) {
+		ncells = OFMEM_EXTRA_AVAIL_CELLS;
+	}
+	memcpy(s_extra_avail, cells, ncells * sizeof(ucell));
+	s_extra_avail_cells = ncells;
+}
+
 static void ofmem_update_memory_available( phandle_t ph, range_t *range,
 		ucell **mem_prop, int *mem_prop_size, int *mem_prop_used, u64 top_address )
 {
@@ -294,6 +308,9 @@ static void ofmem_update_memory_available( phandle_t ph, range_t *range,
 	/* inverse of phys_range list could take 2 or more additional cells for the tail
 	   For /memory, physical addresses may be wider than one ucell. */
 	prop_used = (ncells + 1) * sizeof(ucell) * ofmem_arch_get_available_entry_size(ph) + 1;
+	if (ph == s_phandle_memory) {
+		prop_used += s_extra_avail_cells * sizeof(ucell);
+	}
 
 	if (prop_used > *mem_prop_size) {
 
@@ -337,6 +354,11 @@ static void ofmem_update_memory_available( phandle_t ph, range_t *range,
 	if ((start - 1) < top_address) {
 		ofmem_arch_create_available_entry(ph, &prop[ncells], start, top_address - start + 1);
 		ncells += ofmem_arch_get_available_entry_size(ph);
+	}
+
+	if (ph == s_phandle_memory && s_extra_avail_cells) {
+		memcpy(&prop[ncells], s_extra_avail, s_extra_avail_cells * sizeof(ucell));
+		ncells += s_extra_avail_cells;
 	}
 
 	ofmem_set_property(ph, "available",
