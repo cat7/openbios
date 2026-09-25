@@ -411,6 +411,25 @@ ob_u3_i2c_init(phandle_t u3)
         fword("finish-device");
 }
 
+/* The U3's DMA address relocation table */
+static void
+ob_u3_dart_init(void)
+{
+        phandle_t dnode;
+        int props[2];
+
+        fword("new-device");
+        push_str("dart");
+        fword("device-name");
+        dnode = get_cur_dev();
+        set_property(dnode, "device_type", "dart", 5);
+        set_property(dnode, "compatible", "u3-dart\0dart", 13);
+        props[0] = __cpu_to_be32(0xf8033000);
+        props[1] = __cpu_to_be32(0x7000);
+        set_property(dnode, "reg", (char *)&props, sizeof(props));
+        fword("finish-device");
+}
+
 void
 ob_unin_init(void)
 {
@@ -445,6 +464,7 @@ ob_unin_init(void)
 
         if (is_u3()) {
                 ob_u3_i2c_init(dnode);
+                ob_u3_dart_init();
         }
 
         fword("finish-device");
