@@ -1720,6 +1720,21 @@ static void ob_pci_configure_bar(pci_addr addr, pci_config_t *config,
         config->assigned[reg] = reloc | *p_omask;
 }
 
+/* The U3 AGP slot, device 0x10, interrupts on MPIC 0x30 */
+#define U3_AGP_SLOT     0x10
+#define U3_AGP_SLOT_IRQ 0x30
+
+static int ob_pci_u3_agp_slot(int dev)
+{
+#ifdef CONFIG_PPC
+        return is_apple() && is_u3() &&
+               arch->device_id == PCI_DEVICE_ID_APPLE_U3_AGP &&
+               dev == U3_AGP_SLOT;
+#else
+        return 0;
+#endif
+}
+
 static void ob_pci_configure_irq(pci_addr addr, pci_config_t *config)
 {
         uint8_t irq_pin, irq_line;
@@ -1729,6 +1744,9 @@ static void ob_pci_configure_irq(pci_addr addr, pci_config_t *config)
                 config->irq_pin = irq_pin;
                 irq_pin = (((config->dev >> 11) & 0x1F) + irq_pin - 1) & 3;
                 irq_line = arch->irqs[irq_pin];
+                if (ob_pci_u3_agp_slot((config->dev >> 11) & 0x1F)) {
+                        irq_line = U3_AGP_SLOT_IRQ;
+                }
                 pci_config_write8(addr, PCI_INTERRUPT_LINE, irq_line);
                 config->irq_line = irq_line;
         } else
@@ -2292,6 +2310,8 @@ static void ob_pci_host_bus_interrupt(ucell dnode, u32 *props, int *ncells, u32 
     if (!is_apple() && (PCI_DEV(addr) == 1 && PCI_FN(addr) == 0)) {
         /* On PReP machine the LSI SCSI has fixed routing to IRQ 13 */
         props[(*ncells)++] = 13;
+    } else if (ob_pci_u3_agp_slot(PCI_DEV(addr))) {
+        props[(*ncells)++] = U3_AGP_SLOT_IRQ;
     } else {
         props[(*ncells)++] = arch->irqs[((intno - 1) + (addr >> 11)) & 3];
     }
