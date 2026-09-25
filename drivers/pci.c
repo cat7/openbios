@@ -1017,7 +1017,7 @@ int k2_uata_config_cb(const pci_config_t *config)
          * Apple's driver opens both and treats every DMA-source interrupt
          * as a DMA completion.
          */
-        phandle_t mpic = dt_iterate_type(0, "open-pic");
+        phandle_t mpic = ob_host_mpic();
         u32 props[4] = { 0x27, 1, 0x0d, 1 };
 
         if (mpic) {
@@ -1966,7 +1966,7 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
     }
 
     PCI_DPRINTF("setting up interrupt map for host %x\n", host);
-    dnode = dt_iterate_type(0, "open-pic");
+    dnode = ob_host_mpic();
     path = get_path_from_ph(host);
     if (dnode && path) {
         /* the mac-io may be behind a bridge */
@@ -2215,7 +2215,7 @@ int ob_pci_ht_init(const pci_arch_t *ht)
     host = ob_configure_pci_device(path, &bus, &mem_base, &io_base,
                                    0, 0, 0, NULL);
 
-    mpic = dt_iterate_type(0, "open-pic");
+    mpic = ob_host_mpic();
     PUSH(host);
     fword("child");
     bridge = POP();

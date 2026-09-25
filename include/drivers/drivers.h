@@ -157,6 +157,7 @@ void macio_nvram_put(char *buf);
 void macio_nvram_get(char *buf);
 void macio_nvram_init(const char *path, phys_addr_t addr);
 void ob_unin_init(void);
+ucell ob_host_mpic(void);
 
 /* drivers/timer.c */
 void setup_timers(void);

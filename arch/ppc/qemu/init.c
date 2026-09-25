@@ -1292,7 +1292,7 @@ arch_of_init(void)
 #ifdef CONFIG_DRIVER_PCI
     if (is_u3()) {
         /* the CPUs take their interrupts from the K2 MPIC */
-        phandle_t mpic = dt_iterate_type(0, "open-pic");
+        phandle_t mpic = ob_host_mpic();
         phandle_t ph;
 
         PUSH(find_dev("/cpus"));

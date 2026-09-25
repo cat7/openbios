@@ -411,6 +411,50 @@ ob_u3_i2c_init(phandle_t u3)
         fword("finish-device");
 }
 
+/* The host MPIC: the open-pic that does not itself interrupt another */
+phandle_t ob_host_mpic(void)
+{
+        phandle_t ph = 0;
+        int len;
+
+        while ((ph = dt_iterate_type(ph, "open-pic"))) {
+                if (!get_property(ph, "interrupts", &len)) {
+                        return ph;
+                }
+        }
+        return 0;
+}
+
+/* The U3's own MPIC, cascaded into the K2 MPIC */
+static void
+ob_u3_mpic_init(void)
+{
+        phandle_t dnode;
+        int props[2];
+
+        fword("new-device");
+        push_str("mpic");
+        fword("device-name");
+        dnode = get_cur_dev();
+        set_property(dnode, "device_type", "open-pic", 9);
+        set_property(dnode, "compatible", "chrp,open-pic", 14);
+        set_property(dnode, "built-in", "", 0);
+        props[0] = __cpu_to_be32(0xf8040000);
+        props[1] = __cpu_to_be32(0x40000);
+        set_property(dnode, "reg", (char *)&props, sizeof(props));
+        set_int_property(dnode, "#interrupt-cells", 2);
+        set_int_property(dnode, "#address-cells", 0);
+        set_property(dnode, "interrupt-controller", "", 0);
+        set_property(dnode, "big-endian", "", 0);
+        set_int_property(dnode, "clock-frequency", 4166666);
+        props[0] = __cpu_to_be32(0x38);
+        props[1] = 0;
+        set_property(dnode, "interrupts", (char *)&props, sizeof(props));
+        /* the K2 MPIC is built earlier, with the HyperTransport bus */
+        set_int_property(dnode, "interrupt-parent", ob_host_mpic());
+        fword("finish-device");
+}
+
 /* The U3's DMA address relocation table */
 static void
 ob_u3_dart_init(void)
@@ -465,6 +509,7 @@ ob_unin_init(void)
         if (is_u3()) {
                 ob_u3_i2c_init(dnode);
                 ob_u3_dart_init();
+                ob_u3_mpic_init();
         }
 
         fword("finish-device");
