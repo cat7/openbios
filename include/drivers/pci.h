@@ -201,6 +201,7 @@ extern const pci_arch_t *arch;
  * PCI_DEVICE_ID_ATI_RAGE128_PF (0x5046) above.
  */
 #define PCI_DEVICE_ID_ATI_RAGE128PRO     0x5245
+#define PCI_DEVICE_ID_ATI_RADEON_NH      0x4e48
 
 #define PCI_VENDOR_ID_DEC                0x1011
 #define PCI_DEVICE_ID_DEC_21154          0x0026
