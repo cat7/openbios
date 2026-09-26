@@ -86,6 +86,13 @@ static const pci_dev_t ide_devices[] = {
         0, 0, 0,
         ide_config_cb2, NULL,
     },
+    /* K2 SATA */
+    {
+        PCI_VENDOR_ID_SERVERWORKS, PCI_DEVICE_ID_SERVERWORKS_K2_SATA,
+        "k2-sata-root", "k2-sata-root", NULL, "k2-s-ata\0",
+        1, 0, 1,
+        &k2_sata_config_cb, NULL,
+    },
     {
         0xFFFF, 0xFFFF,
         NULL, NULL, NULL, NULL,

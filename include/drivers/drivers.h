@@ -70,6 +70,7 @@ int ob_ide_init(const char *path, uint32_t io_port0, uint32_t ctl_port0,
 void ob_ide_quiesce(void);
 int macio_ide_init(const char *path, uint32_t addr, int nb_channels);
 int k2_uata_init(const char *path, uint32_t bar);
+int k2_sata_init(const char *path, uint32_t bar);
 #endif
 #ifdef CONFIG_DRIVER_ESP
 /* drivers/esp.c */

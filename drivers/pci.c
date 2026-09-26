@@ -1141,6 +1141,24 @@ int k2_uata_config_cb(const pci_config_t *config)
         return 0;
 }
 
+/* The ports interrupt through their parent, which is on the MPIC */
+int k2_sata_config_cb(const pci_config_t *config)
+{
+        phandle_t mpic = ob_host_mpic();
+        u32 props[2] = { 0, 1 };
+
+        if (mpic) {
+                set_int_property(get_cur_dev(), "interrupt-parent", mpic);
+                set_property(get_cur_dev(), "interrupts", (char *)props,
+                             sizeof(props));
+        }
+        set_property(get_cur_dev(), "interrupt-controller", "", 0);
+#ifdef CONFIG_DRIVER_MACIO
+        k2_sata_init(config->path, config->assigned[5] & ~0x0000000F);
+#endif
+        return 0;
+}
+
 int macio_keylargo_config_cb (const pci_config_t *config)
 {
         pci_set_ranges(config);
@@ -2411,7 +2429,7 @@ static const struct {
     { 4, 11, 0x3f },
     { 5, 13, 0x27 }, { 5, 14, 0x28 },
     { 6, 15, 0x29 },
-    { 7, 12, 0x11 },
+    { 7, 12, 0x00 },
 };
 
 static void ob_u3_ht_set_interrupt_map(phandle_t bridge, int ht_slot,

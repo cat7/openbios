@@ -1789,4 +1789,98 @@ int k2_uata_init(const char *path, uint32_t bar)
 
 	return 0;
 }
+
+/* K2 SATA: taskfile registers 4 bytes apart, device control at 0x20 */
+#define K2_SATA_PORT_STRIDE	0x100
+#define K2_SATA_CONTROL		0x20
+
+static unsigned long k2_sata_reg(struct ide_channel *chan, unsigned int port)
+{
+	if (port == IDEREG_CONTROL)
+		return chan->mmio + K2_SATA_CONTROL;
+	return chan->mmio + (port << 2);
+}
+
+static unsigned char
+k2_sata_inb(struct ide_channel *chan, unsigned int port)
+{
+	return in_8((unsigned char *)k2_sata_reg(chan, port));
+}
+
+static void
+k2_sata_outb(struct ide_channel *chan, unsigned char data, unsigned int port)
+{
+	out_8((unsigned char *)k2_sata_reg(chan, port), data);
+}
+
+static void
+k2_sata_insw(struct ide_channel *chan,
+	     unsigned int port, unsigned char *addr, unsigned int count)
+{
+	_insw((uint16_t *)k2_sata_reg(chan, port), addr, count);
+}
+
+static void
+k2_sata_outsw(struct ide_channel *chan,
+	      unsigned int port, unsigned char *addr, unsigned int count)
+{
+	_outsw((uint16_t *)k2_sata_reg(chan, port), addr, count);
+}
+
+/* One node per port under the PCI node, one drive per port */
+int k2_sata_init(const char *path, uint32_t bar)
+{
+	static const char *const locations[] = { "A (upper)", "B (lower)" };
+	struct ide_channel *chan;
+	phandle_t dnode;
+	int i, j;
+
+	for (i = 0; i < 2; i++) {
+		chan = malloc(sizeof(struct ide_channel));
+		chan->mmio = bar + i * K2_SATA_PORT_STRIDE;
+		chan->obide_inb = k2_sata_inb;
+		chan->obide_insw = k2_sata_insw;
+		chan->obide_outb = k2_sata_outb;
+		chan->obide_outsw = k2_sata_outsw;
+		chan->selected = -1;
+		chan->present = 1;
+
+		for (j = 0; j < 2; j++) {
+			chan->drives[j].present = 0;
+			chan->drives[j].unit = j;
+			chan->drives[j].channel = chan;
+			chan->drives[j].bs = 512;
+			chan->drives[j].nr = j;
+		}
+
+		ob_ide_probe(chan);
+		chan->drives[1].present = 0;
+		if (chan->present)
+			ob_ide_identify_drives(chan);
+
+		fword("new-device");
+		dnode = get_cur_dev();
+		PUSH(pointer2cell(chan));
+		feval("value chan");
+
+		push_str("k2-sata");
+		fword("device-name");
+		push_str("k2-sata");
+		fword("device-type");
+		set_int_property(dnode, "reg", i);
+		set_int_property(dnode, "interrupts", i);
+		set_int_property(dnode, "#address-cells", 1);
+		set_int_property(dnode, "#size-cells", 0);
+		set_property(dnode, "io-device-location", locations[i],
+			     strlen(locations[i]) + 1);
+		BIND_NODE_METHODS(dnode, ob_ide_ctrl);
+
+		if (chan->present)
+			ob_ide_drive_nodes(chan);
+
+		fword("finish-device");
+	}
+
+	return 0;
+}
 #endif /* CONFIG_DRIVER_MACIO */
