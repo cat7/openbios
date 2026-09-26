@@ -286,6 +286,106 @@ push_physaddr(phys_addr_t value)
     }
 }
 
+/* U3 memory: eight DIMM slots in four pairs, banks 2n and 2n+1 are the
+   front and back of pair n, as on a PowerMac7,2 */
+#define U3_BANKS 8
+#define U3_MEM_ENTRIES 16
+
+static const char * const u3_slot_names[U3_BANKS] = {
+    "DIMM0/J11", "DIMM1/J12", "DIMM2/J13", "DIMM3/J14",
+    "DIMM4/J41", "DIMM5/J42", "DIMM6/J43", "DIMM7/J44",
+};
+
+static int
+u3_strlist(char *buf, int len, const char *s)
+{
+    int n = strlen(s) + 1;
+
+    memcpy(buf + len, s, n);
+    return len + n;
+}
+
+static void
+u3_memory_node(uint64_t low, uint64_t high)
+{
+    phandle_t ph = find_dev("/memory");
+    uint64_t total = low + high, bank = 0x40000000ULL;
+    uint64_t base[U3_MEM_ENTRIES], size[U3_MEM_ENTRIES];
+    uint32_t reg[U3_MEM_ENTRIES * 3], bsz[U3_BANKS];
+    ucell avail[U3_MEM_ENTRIES * 3];
+    char names[256], types[128], speeds[160];
+    static uint8_t spd[U3_BANKS * 128];
+    int n = 0, na = 0, nl = 4, nt = 0, ns = 0, i;
+
+    /* bank size: 1 GiB (2 GiB per DIMM pair), larger only above 8 GiB */
+    if (total > 8ULL * 0x40000000ULL) {
+        bank = 0x80000000ULL;
+    }
+    while (low && n < U3_MEM_ENTRIES) {
+        size[n] = low < bank ? low : bank;
+        base[n] = n ? base[n - 1] + size[n - 1] : 0;
+        low -= size[n++];
+    }
+    for (i = 0; high && n < U3_MEM_ENTRIES; i++) {
+        size[n] = high < bank ? high : bank;
+        base[n] = i ? base[n - 1] + size[n - 1] : 0x100000000ULL;
+        high -= size[n];
+        avail[na++] = base[n] >> 32;
+        avail[na++] = (uint32_t)base[n];
+        avail[na++] = size[n];
+        n++;
+    }
+    ofmem_set_extra_available(avail, na);
+
+    memset(reg, 0, sizeof(reg));
+    for (i = 0; i < n; i++) {
+        reg[i * 3] = base[i] >> 32;
+        reg[i * 3 + 1] = (uint32_t)base[i];
+        reg[i * 3 + 2] = size[i];
+    }
+    set_property(ph, "reg", (char *)reg,
+                 (n > U3_BANKS ? n : U3_BANKS) * 3 * sizeof(uint32_t));
+
+    memset(bsz, 0, sizeof(bsz));
+    for (i = 0; i < n && i < U3_BANKS; i++) {
+        bsz[i] = size[i];
+    }
+    set_property(ph, "bank-sizes", (char *)bsz, sizeof(bsz));
+    set_int_property(ph, "ram-layout-architecture", 1);
+
+    /* slot i holds half of each of the banks of its pair */
+    names[0] = names[1] = names[2] = 0;
+    names[3] = 0xff;
+    memset(spd, 0, sizeof(spd));
+    for (i = 0; i < U3_BANKS; i++) {
+        int used = bsz[i & ~1] != 0;
+
+        nl = u3_strlist(names, nl, u3_slot_names[i]);
+        nt = u3_strlist(types, nt, used ? "DDR SDRAM" : "");
+        ns = u3_strlist(speeds, ns, used ? "PC3200U-30330" : "");
+        if (used) {
+            spd[i * 128] = 0x80;
+            spd[i * 128 + 1] = 0x08;
+            spd[i * 128 + 2] = 0x07;
+        }
+    }
+    set_property(ph, "slot-names", names, nl);
+    set_property(ph, "dimm-types", types, nt);
+    set_property(ph, "dimm-speeds", speeds, ns);
+    set_property(ph, "dimm-info", (char *)spd, sizeof(spd));
+
+    nl = 4;
+    for (i = 0; i < U3_BANKS; i++) {
+        char b[40];
+
+        snprintf(b, sizeof(b), "64 bit Bank%d/%s/%s/%s", i,
+                 u3_slot_names[i & ~1] + 6, u3_slot_names[i | 1] + 6,
+                 (i & 1) ? "back" : "front");
+        nl = u3_strlist(names, nl, b);
+    }
+    set_property(ph, "bank-names", names, nl);
+}
+
 /* From drivers/timer.c */
 extern unsigned long timer_freq;
 
@@ -1175,43 +1275,21 @@ arch_of_init(void)
     push_str("/memory");
     fword("find-device");
 
-    /* all memory */
+    if (machine_id == ARCH_MAC99_U3) {
+        u3_memory_node(ram_size, fw_cfg_read_i64(FW_CFG_PPC_HIGH_RAM_SIZE));
+    } else {
+        /* all memory */
 
-    push_physaddr(0);
-    fword("encode-phys");
-    /* This needs adjusting if #size-cells gets increased.
-       Alternatively use multiple (address, size) tuples. */
-    PUSH(ram_size & 0xffffffff);
-    fword("encode-int");
-    fword("encode+");
-
-    /* U3: RAM beyond the first 2 GiB continues at 4 GiB */
-    if (ppc_root_address_cells() == 2) {
-        uint64_t high = fw_cfg_read_i64(FW_CFG_PPC_HIGH_RAM_SIZE);
-        uint64_t base = 0x100000000ULL;
-        ucell avail[48];
-        int n = 0;
-
-        while (high && n + 3 <= 48) {
-            uint32_t chunk = high > 0x80000000ULL ? 0x80000000 : high;
-
-            PUSH((uint32_t)base);
-            PUSH(base >> 32);
-            fword("encode-phys");
-            fword("encode+");
-            PUSH(chunk);
-            fword("encode-int");
-            fword("encode+");
-            avail[n++] = base >> 32;
-            avail[n++] = (uint32_t)base;
-            avail[n++] = chunk;
-            base += chunk;
-            high -= chunk;
-        }
-        ofmem_set_extra_available(avail, n);
+        push_physaddr(0);
+        fword("encode-phys");
+        /* This needs adjusting if #size-cells gets increased.
+           Alternatively use multiple (address, size) tuples. */
+        PUSH(ram_size & 0xffffffff);
+        fword("encode-int");
+        fword("encode+");
+        push_str("reg");
+        fword("property");
     }
-    push_str("reg");
-    fword("property");
 
     cpu = id_cpu();
 
