@@ -180,6 +180,10 @@ constant config-info.size
 \ 7.4.4    Nonvolatile memory
 \ --------------------------------------------------------
 
+\ writes /options to the NVRAM device once one exists
+defer nvram-commit    ( -- )
+' noop to nvram-commit
+
 : $setenv    ( data-addr data-len name-str name-len -- )
   2dup find-config ?dup if
     >r 2swap r>
@@ -204,6 +208,7 @@ constant config-info.size
 
   dup 0= abort" Invalid value."
   2swap $setenv
+  nvram-commit
 ;
   
 : printenv    ( "{param-name}<eol>" -- )
@@ -229,6 +234,7 @@ constant config-info.size
   linefeed parse
   find-config ?dup if
     (set-default)
+    nvram-commit
   else
     ." No such parameter." -2 throw
   then

@@ -329,5 +329,9 @@ nvram_init( const char *path )
 	BIND_NODE_METHODS(get_cur_dev(), nvram);
 	fword("finish-device");
 
+	/* setenv and set-default write through, as on real firmware */
+	PUSH_xt(bind_noname_func(update_nvram));
+	feval("to nvram-commit");
+
 	return ph;
 }
