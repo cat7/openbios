@@ -1324,15 +1324,15 @@ arch_of_init(void)
                     gpio_ph = find_dev(buf);
                 }
                 if (gpio_ph) {
-                    /* KeyLargo extint-gpio3/4/15/16; K2 gpio7/8 */
+                    /* KeyLargo extint-gpio3/4/15/16; K2 gpio7-10 */
                     static const uint32_t soft_reset_gpio[4] = {
                         0x5b, 0x5c, 0x67, 0x68
                     };
-                    static const uint32_t k2_soft_reset_gpio[2] = {
-                        0x71, 0x72
+                    static const uint32_t k2_soft_reset_gpio[4] = {
+                        0x71, 0x72, 0x73, 0x74
                     };
                     uint32_t reset_offset = is_u3() ?
-                                            k2_soft_reset_gpio[i & 1] :
+                                            k2_soft_reset_gpio[i & 3] :
                                             soft_reset_gpio[i < 4 ? i : 1];
 
                     PUSH(gpio_ph);
@@ -1385,6 +1385,43 @@ arch_of_init(void)
         }
     }
 #endif
+
+    if (is_u3() && g_num_cpus > 1) {
+        /* timebase-enable at gpio 0x76: WRITE_GPIO drives it low to freeze */
+        static const char tb_compat[] = "timebase-enable\0gpio30\0gpio";
+        char *macio;
+        int len;
+
+        macio = get_property(find_dev("/aliases"), "mac-io", &len);
+        if (macio) {
+            phandle_t cpus = find_dev("/cpus");
+            phandle_t tb;
+            uint32_t pf[5];
+
+            snprintf(buf, sizeof(buf), "%s/gpio", macio);
+            push_str(buf);
+            fword("find-device");
+            fword("new-device");
+            push_str("timebase-enable");
+            fword("device-name");
+            tb = get_cur_dev();
+            set_property(tb, "device_type", "gpio", 5);
+            set_property(tb, "compatible", tb_compat, sizeof(tb_compat));
+            set_int_property(tb, "reg", 0x26);
+            set_property(tb, "built-in", "", 0);
+            pf[0] = __cpu_to_be32(cpus);
+            pf[1] = __cpu_to_be32(0x08000000);
+            pf[2] = __cpu_to_be32(1);
+            pf[3] = __cpu_to_be32(0);
+            pf[4] = __cpu_to_be32(4);
+            set_property(tb, "platform-do-cpu-timebase", (char *)pf,
+                         sizeof(pf));
+            fword("finish-device");
+            fword("device-end");
+
+            set_int_property(cpus, "platform-cpu-timebase", tb);
+        }
+    }
 
     printk("CPU type %s", cpu->name);
     if (g_num_cpus > 1) {
