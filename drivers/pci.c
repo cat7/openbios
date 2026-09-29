@@ -1123,12 +1123,13 @@ int macio_heathrow_config_cb (const pci_config_t *config)
 int k2_uata_config_cb(const pci_config_t *config)
 {
         /*
-         * Device interrupt on INTA's MPIC input, DMA interrupt on its own:
-         * Apple's driver opens both and treats every DMA-source interrupt
-         * as a DMA completion.
+         * Device interrupt on INTA's MPIC input, level; DMA interrupt on
+         * its own input, edge, as on a real Kauai cell: Apple's driver
+         * opens both and treats every DMA-source interrupt as a DMA
+         * completion, and older drivers never clear the DMA latch.
          */
         phandle_t mpic = ob_host_mpic();
-        u32 props[4] = { 0x27, 1, 0x0d, 1 };
+        u32 props[4] = { 0x27, 1, 0x0d, 0 };
 
         if (mpic) {
                 set_int_property(get_cur_dev(), "interrupt-parent", mpic);
