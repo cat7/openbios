@@ -1457,7 +1457,10 @@ int usb_ohci_config_cb(const pci_config_t *config)
      * forever -- and Mac OS X 10.0/10.1 boot with a dead USB keyboard
      * and mouse (or with input working only by accident of timing).
      */
-    if (is_newworld()) {
+    if (is_newworld() && pci_config_read16(PCI_ADDR(PCI_BUS(config->dev),
+                                              PCI_DEV(config->dev),
+                                              PCI_FN(config->dev)),
+                                         PCI_VENDOR_ID) == 0x106b) {
         static int ohci_index;
         phandle_t ph = get_cur_dev();
         const char *clock_id = ohci_index ? "usb1u148" : "usb0u048";
