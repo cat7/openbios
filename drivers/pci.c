@@ -2322,7 +2322,8 @@ static phandle_t ob_pci_host_set_interrupt_map(phandle_t host)
 
 static void ob_pci_host_bus_interrupt(ucell dnode, u32 *props, int *ncells, u32 addr, u32 intno)
 {
-    *ncells += pci_encode_phys_addr(props + *ncells, 0, 0, addr, 0, 0);
+    /* the map mask ignores the function, so the entry must too */
+    *ncells += pci_encode_phys_addr(props + *ncells, 0, 0, addr & ~0x700, 0, 0);
 
     props[(*ncells)++] = intno;
     props[(*ncells)++] = dnode;
