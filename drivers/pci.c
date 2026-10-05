@@ -1656,6 +1656,113 @@ static char pci_xbox_ignore_device (int bus, int devnum, int fn)
 }
 #endif
 
+
+#define PCI_PREALLOC_MAX 128
+static struct {
+        pci_addr addr;
+        int cfg;
+        unsigned long base;
+        uint32_t size;
+} pci_prealloc[PCI_PREALLOC_MAX];
+static int pci_prealloc_n;
+
+static int ob_pci_read_identification(int bus, int devnum, int fn,
+                                      int *vid_ptr, int *did_ptr,
+                                      uint8_t *class_ptr, uint8_t *subclass_ptr);
+
+static unsigned long ob_pci_mem_limit(void)
+{
+        return arch->mem_len ? arch->pci_mem_base + arch->mem_len : 0;
+}
+
+/* Place the memory BARs of one bus largest first so that big alignments
+   do not strand the rest, and nothing lands beyond the host window. */
+static void ob_pci_prealloc_bus(unsigned long *mem_base, int bus)
+{
+        int devnum, fn, nfn, reg, nregs, rom, i, j, cfg, start;
+        uint32_t orig, smask, align;
+        unsigned long limit = ob_pci_mem_limit(), base;
+        pci_addr addr;
+        uint8_t ht;
+
+        start = pci_prealloc_n;
+        for (devnum = 0; devnum < 32; devnum++) {
+                nfn = 1;
+                for (fn = 0; fn < nfn; fn++) {
+                        addr = PCI_ADDR(bus, devnum, fn);
+                        if (!ob_pci_read_identification(bus, devnum, fn, 0, 0,
+                                                        0, 0)) {
+                                continue;
+                        }
+                        ht = pci_config_read8(addr, PCI_HEADER_TYPE);
+                        if (fn == 0 && (ht & 0x80)) {
+                                nfn = 8;
+                        }
+                        if ((ht & 0x7f) == 0) {
+                                nregs = 6;
+                                rom = PCI_ROM_ADDRESS;
+                        } else if ((ht & 0x7f) == 1) {
+                                nregs = 2;
+                                rom = PCI_ROM_ADDRESS1;
+                        } else {
+                                continue;
+                        }
+                        for (reg = 0; reg <= nregs; reg++) {
+                                cfg = reg == nregs ? rom :
+                                      PCI_BASE_ADDR_0 + reg * 4;
+                                orig = pci_config_read32(addr, cfg);
+                                pci_config_write32(addr, cfg, 0xffffffff);
+                                smask = pci_config_read32(addr, cfg);
+                                pci_config_write32(addr, cfg, orig);
+                                if (smask == 0 || smask == 0xffffffff) {
+                                        continue;
+                                }
+                                if (reg < nregs && (smask & 1)) {
+                                        continue;
+                                }
+                                if (reg < nregs && (smask & 6) == 4) {
+                                        reg++;
+                                }
+                                if (pci_prealloc_n >= PCI_PREALLOC_MAX) {
+                                        continue;
+                                }
+                                pci_prealloc[pci_prealloc_n].addr = addr;
+                                pci_prealloc[pci_prealloc_n].cfg = cfg;
+                                pci_prealloc[pci_prealloc_n].size =
+                                        ~(smask & ~0xfu) + 1;
+                                pci_prealloc[pci_prealloc_n].base = 0;
+                                pci_prealloc_n++;
+                        }
+                }
+        }
+
+        for (i = start + 1; i < pci_prealloc_n; i++) {
+                typeof(pci_prealloc[0]) t = pci_prealloc[i];
+                for (j = i - 1; j >= start && pci_prealloc[j].size < t.size; j--) {
+                        pci_prealloc[j + 1] = pci_prealloc[j];
+                }
+                pci_prealloc[j + 1] = t;
+        }
+
+        for (i = start; i < pci_prealloc_n; i++) {
+                align = pci_prealloc[i].size;
+                if (align < (1 << 16)) {
+                        align = 1 << 16;
+                }
+                base = (*mem_base + align - 1) & ~(unsigned long)(align - 1);
+                if (limit && base + align > limit) {
+                        printk("PCI: no room for %x byte BAR %x of %d:%d.%d\n",
+                               pci_prealloc[i].size, pci_prealloc[i].cfg, bus,
+                               (int)((pci_prealloc[i].addr >> 11) & 0x1f),
+                               (int)((pci_prealloc[i].addr >> 8) & 7));
+                        pci_prealloc[i].size = 0;
+                        continue;
+                }
+                pci_prealloc[i].base = base;
+                *mem_base = base + align;
+        }
+}
+
 static void ob_pci_configure_bar(pci_addr addr, pci_config_t *config,
                                  int reg, int config_addr,
                                  uint32_t *p_omask,
@@ -1704,7 +1811,36 @@ static void ob_pci_configure_bar(pci_addr addr, pci_config_t *config,
         reloc = base;
         if (size < min_align)
                 size = min_align;
+        if (amask == 0x0000000F) {
+                int i;
+
+                for (i = 0; i < pci_prealloc_n; i++) {
+                        if (pci_prealloc[i].addr == addr &&
+                            pci_prealloc[i].cfg == config_addr) {
+                                break;
+                        }
+                }
+                if (i < pci_prealloc_n) {
+                        if (!pci_prealloc[i].size) {
+                                config->sizes[reg] = 0;
+                                pci_config_write32(addr, config_addr, 0);
+                                return;
+                        }
+                        reloc = pci_prealloc[i].base;
+                        pci_config_write32(addr, config_addr, reloc | *p_omask);
+                        config->assigned[reg] = reloc | *p_omask;
+                        return;
+                }
+        }
         reloc = (reloc + size -1) & ~(size - 1);
+        if (amask == 0x0000000F && ob_pci_mem_limit() &&
+            (unsigned long)reloc + size > ob_pci_mem_limit()) {
+                printk("PCI: no room for BAR %x of %s\n", config_addr,
+                       config->path);
+                config->sizes[reg] = 0;
+                pci_config_write32(addr, config_addr, 0);
+                return;
+        }
         if (*io_base == base) {
                 PCI_DPRINTF("changing io_base from 0x%lx to 0x%x\n",
                             *io_base, reloc + size);
@@ -1786,6 +1922,8 @@ static void ob_scan_pci_bus(int *bus_num, unsigned long *mem_base,
 	int devnum, fn, is_multi;
 
 	PCI_DPRINTF("\nScanning bus %d at %s...\n", bus, path);
+
+	ob_pci_prealloc_bus(mem_base, bus);
 
 	for (devnum = 0; devnum < 32; devnum++) {
 		is_multi = 0;
