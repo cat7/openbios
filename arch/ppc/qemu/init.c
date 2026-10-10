@@ -1126,13 +1126,14 @@ arch_of_init(void)
                 if (gpio_ph) {
                     /*
                      * KeyLargo GPIO register offsets for each CPU's
-                     * soft-reset line; must match KL_GPIO_RESET_CPUn
-                     * in hw/misc/macio/gpio.h.
+                     * soft-reset line, as QEMU wires them: CPU4 and up
+                     * one each from 0x89, past KeyLargo's last pin 0x7b.
                      */
                     static const uint32_t soft_reset_gpio[4] = {
                         0x5b, 0x5c, 0x67, 0x68
                     };
-                    uint32_t reset_offset = soft_reset_gpio[i < 4 ? i : 1];
+                    uint32_t reset_offset = i < 4 ? soft_reset_gpio[i]
+                                                  : 0x85 + i;
 
                     PUSH(gpio_ph);
                     fword("encode-int");
