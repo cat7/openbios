@@ -1341,13 +1341,13 @@ arch_of_init(void)
                     static const uint32_t soft_reset_gpio[4] = {
                         0x5b, 0x5c, 0x67, 0x68
                     };
-                    static const uint32_t k2_soft_reset_gpio[8] = {
-                        0x71, 0x72, 0x73, 0x74, 0x89, 0x8a, 0x8b, 0x8c
-                    };
-                    /* QEMU's K2 has eight soft-reset lines, KeyLargo four */
-                    uint32_t reset_offset = is_u3() ?
-                                            k2_soft_reset_gpio[i < 8 ? i : 1] :
-                                            soft_reset_gpio[i < 4 ? i : 1];
+                    /*
+                     * K2 CPU4 and up: one pin each from 0x89 (the Quad
+                     * G5's own CPU0-3 pins), as QEMU wires them
+                     */
+                    uint32_t reset_offset = !is_u3() ?
+                                            soft_reset_gpio[i < 4 ? i : 1] :
+                                            i < 4 ? 0x71 + i : 0x85 + i;
 
                     PUSH(gpio_ph);
                     fword("encode-int");
