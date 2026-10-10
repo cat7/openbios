@@ -829,6 +829,19 @@ static const struct cpudef ppc_defs[] = {
         .initfn = cpu_970_init,
     },
     {
+        .iu_version = 0x00440000,
+        .name = "PowerPC,970MP",
+        .icache_size = 0x10000,
+        .dcache_size = 0x8000,
+        .icache_sets = 0x200,
+        .dcache_sets = 0x80,
+        .icache_block_size = 0x80,
+        .dcache_block_size = 0x80,
+        .tlb_sets = 0x100,
+        .tlb_size = 0x1000,
+        .initfn = cpu_970_init,
+    },
+    {
         .iu_version = 0x00350000,
         .name = "PowerPC,POWER4",
         .icache_size = 0x10000,
@@ -1307,7 +1320,7 @@ arch_of_init(void)
             push_str("reg");
             fword("property");
 
-            push_str(i == 0 ? "running" : "off");
+            push_str(i == 0 ? "running" : "stopped");
             fword("encode-string");
             push_str("state");
             fword("property");
@@ -1328,11 +1341,12 @@ arch_of_init(void)
                     static const uint32_t soft_reset_gpio[4] = {
                         0x5b, 0x5c, 0x67, 0x68
                     };
-                    static const uint32_t k2_soft_reset_gpio[4] = {
-                        0x71, 0x72, 0x73, 0x74
+                    static const uint32_t k2_soft_reset_gpio[8] = {
+                        0x71, 0x72, 0x73, 0x74, 0x89, 0x8a, 0x8b, 0x8c
                     };
+                    /* QEMU's K2 has eight soft-reset lines, KeyLargo four */
                     uint32_t reset_offset = is_u3() ?
-                                            k2_soft_reset_gpio[i & 3] :
+                                            k2_soft_reset_gpio[i < 8 ? i : 1] :
                                             soft_reset_gpio[i < 4 ? i : 1];
 
                     PUSH(gpio_ph);
