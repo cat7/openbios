@@ -920,7 +920,7 @@ arch_of_init(void)
     uint64_t ram_size;
     const struct cpudef *cpu;
     char buf[256], qemu_uuid[16];
-    const char *stdin_path, *stdout_path, *boot_path;
+    const char *stdin_path, *stdout_path, *boot_path, *model;
     uint32_t temp = 0;
     char *boot_device, *bootorder_file;
     uint32_t bootorder_sz, sz;
@@ -1031,15 +1031,23 @@ arch_of_init(void)
     case ARCH_MAC99_U3:
     case ARCH_PREP:
     default:
+        /*
+         * Mac OS X 10.4 drives a PowerMac3,1 with Core99CPU, whose soft
+         * resets stop at four CPUs; a PowerMac3,6 gets MacRISC2CPU, which
+         * takes each CPU's soft-reset from the device tree.
+         */
+        model = machine_id == ARCH_MAC99 &&
+                fw_cfg_read_i32(FW_CFG_NB_CPUS) > 4 ? "PowerMac3,6"
+                                                    : "PowerMac3,1";
 
         /* model */
 
-        push_str("PowerMac3,1");
+        push_str(model);
         fword("model");
 
         /* compatible */
 
-        push_str("PowerMac3,1");
+        push_str(model);
         fword("encode-string");
         push_str("MacRISC");
         fword("encode-string");
