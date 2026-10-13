@@ -54,11 +54,12 @@ typedef struct fsys_entry {
 	int	(*dir_func) (char *dirname);
 	void	(*close_func) (void);
 	int	(*embed_func) (int *start_sector, int needed_sectors);
+	int	(*ls_func) (char *dirname);
 } fsys_entry_t;
 
 static const struct fsys_entry fsys_table[] = {
 # ifdef CONFIG_FSYS_FAT
-    {"fat", fat_mount, fat_read, fat_dir, NULL, NULL},
+    {"fat", fat_mount, fat_read, fat_dir, NULL, NULL, fat_ls},
 # endif
 # ifdef CONFIG_FSYS_EXT2FS
     {"ext2fs", ext2fs_mount, ext2fs_read, ext2fs_dir, NULL, NULL},
@@ -175,7 +176,12 @@ grubfs_files_open( grubfs_info_t *mi )
 		RET( 0 );
 	}
 
-	mi->gfs = &dummy_fs;
+	mi->gfs = malloc(sizeof(grubfs_t));
+	mi->gfs->fsys = NULL;
+	mi->gfs->fd = NULL;
+	mi->gfs->dev_fd = fd;
+	mi->gfs->offset = 0;
+	curfs = mi->gfs;
 
 	for (i = 0; i < sizeof(fsys_table)/sizeof(fsys_table[0]); i++) {
 #ifdef CONFIG_DEBUG_FS
@@ -186,10 +192,7 @@ grubfs_files_open( grubfs_info_t *mi )
 #ifdef CONFIG_DEBUG_FS
 			printk("Mounted %s\n", fsys->name);
 #endif
-			mi->gfs = malloc(sizeof(grubfs_t));
 			mi->gfs->fsys = fsys;
-			mi->gfs->dev_fd = fd;
-			mi->gfs->offset = 0;
 
 			s = path;
 			while (*s) {
@@ -201,7 +204,7 @@ grubfs_files_open( grubfs_info_t *mi )
 #endif
 			if (!mi->gfs->fsys->dir_func((char *) path)) {
 				forth_printf("File not found\n");
-				RET( 0 );
+				break;
 			}
 
 			mi->gfs->fd = malloc(sizeof(grubfile_t));
@@ -209,6 +212,7 @@ grubfs_files_open( grubfs_info_t *mi )
 			mi->gfs->fd->len = filemax;
 			mi->gfs->fd->path = strdup(path);
 
+			free( path );
 			RET( -1 );
 		}
 	}
@@ -216,6 +220,11 @@ grubfs_files_open( grubfs_info_t *mi )
 	printk("Unknown filesystem type\n");
 #endif
 
+	close_io( fd );
+	free( mi->gfs );
+	mi->gfs = NULL;
+	curfs = &dummy_fs;
+	free( path );
 	RET( 0 );
 }
 
@@ -228,6 +237,12 @@ grubfs_files_close( grubfs_info_t *mi )
 	if (gf->path)
 		free((void *)(gf->path));
 	free(gf);
+
+	close_io(mi->gfs->dev_fd);
+	if (curfs == mi->gfs)
+		curfs = &dummy_fs;
+	free(mi->gfs);
+	mi->gfs = NULL;
 
 	filepos = 0;
 	filemax = 0;
@@ -243,6 +258,7 @@ grubfs_files_read( grubfs_info_t *mi )
 	grubfile_t *file = mi->gfs->fd;
         int ret;
 
+	curfs = mi->gfs;
 	filepos = file->pos;
 	filemax = file->len;
 
@@ -285,10 +301,7 @@ grubfs_files_seek( grubfs_info_t *mi )
 
 	file->pos = newpos;
 
-	if (newpos)
-		RET( -1 );
-	else
-		RET( 0 );
+	RET( 0 );
 }
 
 /* ( addr -- size ) */
@@ -300,6 +313,10 @@ grubfs_files_load( grubfs_info_t *mi )
 
 	grubfile_t *file = mi->gfs->fd;
 	count = file->len;
+
+	curfs = mi->gfs;
+	filepos = 0;
+	filemax = file->len;
 
 	ret = mi->gfs->fsys->read_func(buf, count);
 	file->pos = filepos;
@@ -335,38 +352,79 @@ grubfs_files_probe( grubfs_info_t *dummy )
 	long long offs = DPOP();
 	int i;
 
-	curfs->dev_fd = open_ih(ih);
-        if (curfs->dev_fd == -1) {
-                RET( -1 );
-        }
-	curfs->offset = offs;
+	grubfs_t *save = curfs;
+	int found = 0;
+
+	dummy_fs.dev_fd = open_ih(ih);
+	if (dummy_fs.dev_fd == -1) {
+		RET( 0 );
+	}
+	dummy_fs.offset = offs;
+	curfs = &dummy_fs;
 
 	for (i = 0; i < sizeof(fsys_table)/sizeof(fsys_table[0]); i++) {
 #ifdef CONFIG_DEBUG_FS
 		printk("Probing for %s\n", fsys_table[i].name);
 #endif
 		if (fsys_table[i].mount_func()) {
-			RET( -1 );
+			found = -1;
+			break;
 		}
 	}
 
 #ifdef CONFIG_DEBUG_FS
-	printk("Unknown filesystem type\n");
+	if (!found)
+		printk("Unknown filesystem type\n");
 #endif
 
-	close_io(curfs->dev_fd);
+	close_io(dummy_fs.dev_fd);
+	dummy_fs.dev_fd = -1;
+	curfs = save;
 
-	RET ( 0 );
+	RET ( found );
 }
 
 /* static method, ( pathstr len ihandle -- ) */
 static void
 grubfs_files_dir( grubfs_info_t *dummy )
 {
-	forth_printf("dir method not implemented for grubfs filesystem\n");
-	POP();
-	POP();
-	POP();
+	ihandle_t ih = POP_ih();
+	char *path = pop_fstr_copy();
+	grubfs_t *save = curfs;
+	char *s;
+	int i;
+
+	dummy_fs.dev_fd = open_ih(ih);
+	if (dummy_fs.dev_fd == -1) {
+		free(path);
+		return;
+	}
+	dummy_fs.offset = 0;
+	curfs = &dummy_fs;
+
+	for (s = path; *s; s++) {
+		if (*s == '\\')
+			*s = '/';
+	}
+
+	for (i = 0; i < sizeof(fsys_table)/sizeof(fsys_table[0]); i++) {
+		if (fsys_table[i].mount_func()) {
+			if (fsys_table[i].ls_func) {
+				forth_printf("\n");
+				if (!fsys_table[i].ls_func(path))
+					forth_printf("Directory not found\n");
+			} else {
+				forth_printf("dir method not implemented for %s\n",
+					     fsys_table[i].name);
+			}
+			break;
+		}
+	}
+
+	close_io(dummy_fs.dev_fd);
+	dummy_fs.dev_fd = -1;
+	curfs = save;
+	free(path);
 }
 
 static void

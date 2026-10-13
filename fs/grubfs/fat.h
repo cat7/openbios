@@ -88,10 +88,16 @@ struct fat_bpb {
   ( ((*((unsigned char *) entry)) != 0) \
     && ((*((unsigned char *) entry)) != 0xE5) \
     && !(FAT_DIRENTRY_ATTRIB(entry) & FAT_ATTRIB_NOT_OK_MASK) )
+/* On-disk fields are little-endian and not always aligned */
+#define FAT_LE16(p) \
+  ((__u32) ((unsigned char *) (p))[0] | ((__u32) ((unsigned char *) (p))[1] << 8))
+#define FAT_LE32(p) \
+  (FAT_LE16 (p) | (FAT_LE16 ((unsigned char *) (p) + 2) << 16))
+
 #define FAT_DIRENTRY_FIRST_CLUSTER(entry) \
-  ((*((unsigned short *) (entry+26)))+(*((unsigned short *) (entry+20)) << 16))
+  (FAT_LE16 (entry+26) + (FAT_LE16 (entry+20) << 16))
 #define FAT_DIRENTRY_FILELENGTH(entry) \
-  (*((unsigned long *) (entry+28)))
+  FAT_LE32 (entry+28)
 
 #define FAT_LONGDIR_ID(entry) \
   (*((unsigned char *) (entry)))
