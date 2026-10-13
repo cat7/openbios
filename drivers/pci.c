@@ -844,10 +844,11 @@ int rtl8139_config_cb(const pci_config_t *config)
 
 int sungem_config_cb (const pci_config_t *config)
 {
-	phandle_t ph = get_cur_dev();
+	phandle_t ph = get_cur_dev(), aliases;
 	uint32_t val, *mmio;
 	uint8_t mac[6];
 	ucell virt;
+	int len;
 
 #define MAC_ADDR0	(0x6080UL/4)	/* MAC Address 0 Register	*/
 #define MAC_ADDR1	(0x6084UL/4)	/* MAC Address 1 Register	*/
@@ -869,6 +870,13 @@ int sungem_config_cb (const pci_config_t *config)
 	set_property(ph, "local-mac-address", (char *)mac, 6);
 	
 	ob_pci_unmap(virt, 0x8000);
+
+	/* The built-in Ethernet is "enet", as on Apple's firmware */
+	aliases = find_dev("/aliases");
+	if (aliases && !get_property(aliases, "enet", &len)) {
+		set_property(aliases, "enet", config->path,
+		             strlen(config->path) + 1);
+	}
 	return 0;
 }
 
