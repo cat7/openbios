@@ -312,10 +312,9 @@ u3_memory_node(uint64_t low, uint64_t high)
     uint64_t total = low + high, bank = 0x40000000ULL;
     uint64_t base[U3_MEM_ENTRIES], size[U3_MEM_ENTRIES];
     uint32_t reg[U3_MEM_ENTRIES * 3], bsz[U3_BANKS];
-    ucell avail[U3_MEM_ENTRIES * 3];
     char names[256], types[128], speeds[160];
     static uint8_t spd[U3_BANKS * 128];
-    int n = 0, na = 0, nl = 4, nt = 0, ns = 0, i;
+    int n = 0, nl = 4, nt = 0, ns = 0, i;
 
     /* bank size: 1 GiB (2 GiB per DIMM pair), larger only above 8 GiB */
     if (total > 8ULL * 0x40000000ULL) {
@@ -330,12 +329,8 @@ u3_memory_node(uint64_t low, uint64_t high)
         size[n] = high < bank ? high : bank;
         base[n] = i ? base[n - 1] + size[n - 1] : 0x100000000ULL;
         high -= size[n];
-        avail[na++] = base[n] >> 32;
-        avail[na++] = (uint32_t)base[n];
-        avail[na++] = size[n];
         n++;
     }
-    ofmem_set_extra_available(avail, na);
 
     memset(reg, 0, sizeof(reg));
     for (i = 0; i < n; i++) {
