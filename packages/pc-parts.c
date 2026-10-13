@@ -65,7 +65,7 @@ pcparts_open( pcparts_info_t *di )
 	char *str = my_args_copy();
 	char *argstr = strdup("");
 	char *parstr = strdup("");
-	int bs, parnum=-1;
+	int bs, i, parnum=-1;
 	int found = 0;
 	phandle_t ph;
 	ducell offs, size;
@@ -118,9 +118,6 @@ pcparts_open( pcparts_info_t *di )
 	DPRINTF("parstr: %s  argstr: %s  parnum: %d\n", parstr, argstr, parnum);
         free(parstr);
 
-	if( parnum < 0 )
-		parnum = 0;
-
 	di->filesystem_ph = 0;
 	di->read_xt = find_parent_method("read");
 	di->seek_xt = find_parent_method("seek");
@@ -144,13 +141,49 @@ pcparts_open( pcparts_info_t *di )
 
 	bs = 512;
 
-	if (parnum < 4) {
+	/* As per the CHRP bindings, partition 0 is the whole disk and
+	   partitions are numbered from 1 */
+	if (parnum == 0) {
+		offs = 0;
+		di->offs_hi = 0;
+		di->offs_lo = 0;
+		di->size_hi = (ucell) -1 >> 1;
+		di->size_lo = (ucell) -1;
+		found = 1;
+	} else if (parnum < 0) {
+		/* No partition given: use the first primary partition holding
+		   a known filesystem, else the first primary partition */
+		int first = -1;
+
+		for (i = 0; i < 4; i++) {
+			memcpy(p, partition + i, sizeof(struct pc_partition));
+			if (p->type == 0 || is_pc_extended_part(p->type))
+				continue;
+			if (first < 0)
+				first = i;
+			DPUSH( (long long)__le32_to_cpu(p->start_sect) * bs );
+			PUSH_ih( my_parent() );
+			parword("find-filesystem");
+			if (POP_ph()) {
+				break;
+			}
+		}
+		if (i == 4)
+			i = first;
+		if (i < 0) {
+			DPRINTF("no primary partition\n");
+			RET( 0 );
+		}
+		parnum = i + 1;
+	}
+
+	if (parnum > 0 && parnum <= 4) {
 		/* primary partition */
-		partition += parnum;
+		partition += parnum - 1;
 		memcpy(p, partition, sizeof(struct pc_partition));
 
 		if (p->type == 0 || is_pc_extended_part(p->type)) {
-			DPRINTF("partition %d does not exist\n", parnum+1 );
+			DPRINTF("partition %d does not exist\n", parnum );
 			RET( 0 );
 		}
 
@@ -170,15 +203,16 @@ pcparts_open( pcparts_info_t *di )
 		}
 
 		found = 1;
-	} else {
+	} else if (parnum > 4) {
 		/* Extended partition */
-		int i, cur_part;
+		int cur_part;
 		unsigned long ext_start, cur_table;
 
 		/* Search for the extended partition
 		 * which contains logical partitions */
 		for (i = 0; i < 4; i++) {
-			if (is_pc_extended_part(p[i].type))
+			memcpy(p, partition + i, sizeof(struct pc_partition));
+			if (is_pc_extended_part(p->type))
 				break;
 		}
 
@@ -190,15 +224,15 @@ pcparts_open( pcparts_info_t *di )
 		DPRINTF("Extended partition at %d\n", i+1);
 
 		/* Visit each logical partition labels */
-		ext_start = __le32_to_cpu(p[i].start_sect);
+		ext_start = __le32_to_cpu(p->start_sect);
 		cur_table = ext_start;
-		cur_part = 4;
+		cur_part = 5;
 
 		while (cur_part <= parnum) {
 			DPRINTF("cur_part=%d at %lx\n", cur_part, cur_table);
 
 			SEEK( cur_table * bs );
-			if( READ(buf, sizeof(512)) != sizeof(512) )
+			if( READ(buf, 512) != 512 )
 				RET( 0 );
 
 			if (!has_pc_part_magic(buf)) {
