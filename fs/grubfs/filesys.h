@@ -195,6 +195,7 @@ extern char FSYS_BUF[FSYS_BUFLEN];
 int fat_mount (void);
 int fat_read (char *buf, int len);
 int fat_dir (char *dirname);
+int fat_ls (char *dirname);
 #endif
 
 #ifdef CONFIG_FSYS_EXT2FS

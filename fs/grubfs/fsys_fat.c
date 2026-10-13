@@ -23,6 +23,7 @@
 #include "shared.h"
 #include "filesys.h"
 #include "fat.h"
+#include "libc/vsprintf.h"
 
 struct fat_superblock
 {
@@ -70,6 +71,16 @@ fat_mount (void)
   /* Read bpb */
   if (! devread (0, 0, sizeof (bpb), (char *) &bpb))
     return 0;
+
+  bpb.bytes_per_sect = __le16_to_cpu (bpb.bytes_per_sect);
+  bpb.reserved_sects = __le16_to_cpu (bpb.reserved_sects);
+  bpb.dir_entries = __le16_to_cpu (bpb.dir_entries);
+  bpb.short_sectors = __le16_to_cpu (bpb.short_sectors);
+  bpb.fat_length = __le16_to_cpu (bpb.fat_length);
+  bpb.long_sectors = __le32_to_cpu (bpb.long_sectors);
+  bpb.fat32_length = __le32_to_cpu (bpb.fat32_length);
+  bpb.flags = __le16_to_cpu (bpb.flags);
+  bpb.root_cluster = __le32_to_cpu (bpb.root_cluster);
 
   /* Check if the number of sectors per cluster is zero here, to avoid
      zero division.  */
@@ -160,6 +171,7 @@ fat_mount (void)
                sizeof(first_fat), (char *)&first_fat))
     return 0;
 
+  first_fat = __le32_to_cpu (first_fat);
   if (FAT_SUPER->fat_size == 8)
     {
       first_fat &= 0x0fffffff;
@@ -232,7 +244,7 @@ fat_read (char *buf, int len)
 	      if (!devread (sector, 0, FAT_CACHE_SIZE, (char*) FAT_BUF))
 		return 0;
 	    }
-	  next_cluster = * (unsigned long *) (FAT_BUF + (cached_pos >> 1));
+	  next_cluster = FAT_LE32 (FAT_BUF + (cached_pos >> 1));
 	  if (FAT_SUPER->fat_size == 3)
 	    {
 	      if (cached_pos & 1)
@@ -472,6 +484,103 @@ fat_dir (char *dirname)
 
   /* go back to main loop at top of function */
   goto loop;
+}
+
+/* List the directory DIRNAME */
+int
+fat_ls (char *dirname)
+{
+  char dir_buf[FAT_DIRENTRY_LENGTH];
+  char *filename = (char *) NAME_BUF;
+  static unsigned char longdir_pos[] =
+  { 1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30 };
+  int slot = -2;
+  int alias_checksum = -1;
+  int len;
+
+  while (*dirname == '/')
+    dirname++;
+  len = strlen (dirname);
+  while (len > 0 && dirname[len - 1] == '/')
+    dirname[--len] = 0;
+
+  errnum = 0;
+  if (len == 0)
+    {
+      FAT_SUPER->file_cluster = FAT_SUPER->root_cluster;
+      filepos = 0;
+      FAT_SUPER->current_cluster_num = MAXINT;
+    }
+  else if (fat_dir (dirname) || errnum != ERR_BAD_FILETYPE)
+    return 0;
+  errnum = 0;
+
+  while (fat_read (dir_buf, FAT_DIRENTRY_LENGTH) == FAT_DIRENTRY_LENGTH
+	 && dir_buf[0] != 0)
+    {
+      int i, j, c;
+      unsigned char sum;
+
+      if (FAT_DIRENTRY_ATTRIB (dir_buf) == FAT_ATTRIB_LONGNAME)
+	{
+	  unsigned char id = FAT_LONGDIR_ID (dir_buf);
+
+	  if ((id & 0x40))
+	    {
+	      id &= 0x3f;
+	      slot = id;
+	      filename[slot * 13] = 0;
+	      alias_checksum = FAT_LONGDIR_ALIASCHECKSUM (dir_buf);
+	    }
+
+	  if (id != slot || slot == 0
+	      || alias_checksum != FAT_LONGDIR_ALIASCHECKSUM (dir_buf))
+	    {
+	      alias_checksum = -1;
+	      continue;
+	    }
+
+	  slot--;
+	  for (i = 0; i < 13; i++)
+	    filename[slot * 13 + i] = dir_buf[longdir_pos[i]];
+	  continue;
+	}
+
+      if (!FAT_DIRENTRY_VALID (dir_buf))
+	{
+	  slot = -2;
+	  alias_checksum = -1;
+	  continue;
+	}
+
+      for (sum = 0, i = 0; i < 11; i++)
+	sum = ((sum >> 1) | (sum << 7)) + dir_buf[i];
+
+      if (alias_checksum == -1 || slot != 0 || sum != alias_checksum)
+	{
+	  for (i = 0; i < 8 && (c = filename[i] = tolower (dir_buf[i]))
+		 && !isspace (c); i++);
+
+	  filename[i++] = '.';
+
+	  for (j = 0; j < 3 && (c = filename[i + j] = tolower (dir_buf[8 + j]))
+		 && !isspace (c); j++);
+
+	  if (j == 0)
+	    i--;
+
+	  filename[i + j] = 0;
+	}
+
+      forth_printf ("% 10d %s%s\n", (int) FAT_DIRENTRY_FILELENGTH (dir_buf),
+		    filename,
+		    (FAT_DIRENTRY_ATTRIB (dir_buf) & FAT_ATTRIB_DIR) ? "\\" : "");
+
+      slot = -2;
+      alias_checksum = -1;
+    }
+
+  return errnum ? 0 : 1;
 }
 
 #endif /* FSYS_FAT */
