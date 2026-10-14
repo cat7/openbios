@@ -1137,7 +1137,12 @@ int k2_uata_config_cb(const pci_config_t *config)
          * completion, and older drivers never clear the DMA latch.
          */
         phandle_t mpic = ob_host_mpic();
+        phandle_t aliases = find_dev("/aliases");
         u32 props[4] = { 0x27, 1, 0x0d, 0 };
+
+        set_property(aliases, "uata", config->path, strlen(config->path) + 1);
+        set_property(aliases, "k2-uata", config->path,
+                     strlen(config->path) + 1);
 
         if (mpic) {
                 set_int_property(get_cur_dev(), "interrupt-parent", mpic);
