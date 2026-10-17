@@ -281,7 +281,7 @@ void
 set_property( phandle_t ph, const char *name, const char *buf, int len )
 {
 	if( !ph ) {
-		printk("[RAGE128DBG] set_property: NULL phandle, name=%s\n", name);
+		printk("set_property: NULL phandle\n");
 		return;
 	}
 	PUSH(pointer2cell(buf));

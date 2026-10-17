@@ -1179,9 +1179,6 @@ int vga_config_cb (const pci_config_t *config)
         phandle_t ph;
         const unsigned char *fcode_rom = NULL;
 #endif
-        printk("[RAGE128DBG] vga_config_cb: path=%s assigned0=0x%lx assigned6=0x%lx size6=0x%lx\n",
-              config->path, (unsigned long)config->assigned[0],
-              (unsigned long)config->assigned[6], (unsigned long)config->sizes[6]);
         if (config->assigned[0] != 0x00000000) {
             setup_video();
 
@@ -1208,10 +1205,6 @@ int vga_config_cb (const pci_config_t *config)
                     rom = pci_bus_addr_to_host_addr(MEMORY_SPACE_32,
                                                     config->assigned[6] & ~0x0000000F);
                     rom_size = config->sizes[6];
-                    printk("[RAGE128DBG] rom host addr=0x%lx size=0x%lx first bytes=%02x %02x %02x %02x\n",
-                          rom, (unsigned long)rom_size,
-                          ((unsigned char *)rom)[0], ((unsigned char *)rom)[1],
-                          ((unsigned char *)rom)[2], ((unsigned char *)rom)[3]);
 
                     bar = pci_config_read32(config->dev, PCI_ROM_ADDRESS);
                     bar |= PCI_ROM_ADDRESS_ENABLE;
@@ -1234,8 +1227,6 @@ int vga_config_cb (const pci_config_t *config)
                     }
 
                     fcode_rom = find_fcode_rom(rom, rom_size);
-                    printk("[RAGE128DBG] find_fcode_rom returned %s\n",
-                          fcode_rom ? "non-NULL" : "NULL");
                     if (fcode_rom) {
                             /*
                              * Run the card's own FCode inline, right here,
@@ -1266,12 +1257,9 @@ int vga_config_cb (const pci_config_t *config)
                              * of those, not something inherent to running
                              * inline.
                              */
-                            printk("[RAGE128DBG] running fcode inline at %p\n",
-                                  (void *)fcode_rom);
                             PUSH(pointer2cell(fcode_rom));
                             PUSH(1);
                             fword("byte-load");
-                            printk("[RAGE128DBG] inline fcode byte-load returned\n");
                     }
             }
 #endif
@@ -2326,8 +2314,6 @@ static phandle_t ob_configure_pci_device(const char* parent_path,
     }
 
     phandle = get_cur_dev();
-    printk("[RAGE128DBG] ob_configure_pci_device: path=%s vid=%x did=%x phandle=%lx\n",
-          config.path, vid, did, (unsigned long)phandle);
 
     switch (class) {
     case PCI_BASE_CLASS_BRIDGE:
