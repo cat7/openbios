@@ -61,6 +61,17 @@ extern void setup_mmu(unsigned long code_base);
 #define	SEGR_USER		BIT(2)
 #define SEGR_BASE		0x0400
 
+/* OpenBIOS keeps its own memory (code copy, hash table, stacks, heap) at
+   the top of the first 256 MB at most: some clients (NetBSD) map only that
+   segment 1:1 while they call the firmware. Must match start.S. */
+#define OF_LAYOUT_LIMIT		0x10000000UL
+
+static inline unsigned long
+of_layout_top(unsigned long ramsize)
+{
+    return ramsize < OF_LAYOUT_LIMIT ? ramsize : OF_LAYOUT_LIMIT;
+}
+
 static inline unsigned long
 get_hash_base(void)
 {
@@ -71,7 +82,7 @@ static inline unsigned long
 get_rom_base(void)
 {
     ofmem_t *ofmem = ofmem_arch_get_private();
-    return ofmem->ramsize - OF_CODE_SIZE;
+    return of_layout_top(ofmem->ramsize) - OF_CODE_SIZE;
 }
 
 static unsigned long
@@ -523,7 +534,7 @@ setup_mmu(unsigned long ramsize)
 
     /* SDR1: Storage Description Register 1 */
 
-    hash_base = (ramsize - OF_CODE_SIZE - HASH_SIZE) & hash_mask;
+    hash_base = (of_layout_top(ramsize) - OF_CODE_SIZE - HASH_SIZE) & hash_mask;
     memset((void *)hash_base, 0, HASH_SIZE);
     if (is_ppc64())
         mtsdr1(hash_base | MAX(HASH_BITS - 18, 0));
@@ -569,19 +580,17 @@ setup_mmu(unsigned long ramsize)
 void
 ofmem_init(void)
 {
-    ofmem_t *ofmem = ofmem_arch_get_private();
-
     /* Mark the first 4 pages as non-free */
     ofmem_claim_phys(0, 4 * PAGE_SIZE, 0);
     ofmem_claim_virt(0, 4 * PAGE_SIZE, 0);
 
-    /* Map everything at the top of physical RAM 1:1, minus the OpenBIOS ROM in RAM copy */
+    /* Map OpenBIOS's own memory 1:1, minus the OpenBIOS ROM in RAM copy */
     ofmem_claim_phys(get_ram_top(), get_hash_base() + HASH_SIZE - get_ram_top(), 0);
     ofmem_claim_virt(get_ram_top(), get_hash_base() + HASH_SIZE - get_ram_top(), 0);
     ofmem_map(get_ram_top(), get_ram_top(), get_hash_base() + HASH_SIZE - get_ram_top(), 0);
     
     /* Map the OpenBIOS ROM in RAM copy */
-    ofmem_claim_phys(ofmem->ramsize - OF_CODE_SIZE, OF_CODE_SIZE, 0);
+    ofmem_claim_phys(get_rom_base(), OF_CODE_SIZE, 0);
     ofmem_claim_virt(OF_CODE_START, OF_CODE_SIZE, 0);
-    ofmem_map(ofmem->ramsize - OF_CODE_SIZE, OF_CODE_START, OF_CODE_SIZE, 0);
+    ofmem_map(get_rom_base(), OF_CODE_START, OF_CODE_SIZE, 0);
 }
