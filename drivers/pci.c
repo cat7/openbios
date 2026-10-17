@@ -1695,6 +1695,8 @@ static struct {
         int cfg;
         unsigned long base;
         uint32_t size;
+        int pin;        /* Apple mac-io: wants the start of the window */
+        int placed;
 } pci_prealloc[PCI_PREALLOC_MAX];
 static int pci_prealloc_n;
 
@@ -1707,25 +1709,108 @@ static unsigned long ob_pci_mem_limit(void)
         return arch->mem_len ? arch->pci_mem_base + arch->mem_len : 0;
 }
 
+static unsigned long ob_pci_prealloc_align(int i)
+{
+        return pci_prealloc[i].size < (1 << 16) ? 1 << 16 : pci_prealloc[i].size;
+}
+
+/* First fit: the lowest aligned base at or above *lo* where entry i
+   overlaps none of the entries placed so far. Returns 0 when nothing fits
+   below *limit*, 1 with *base* set otherwise. */
+static int ob_pci_prealloc_fit(int start, int i, unsigned long lo,
+                               unsigned long limit, unsigned long *base)
+{
+        unsigned long align = ob_pci_prealloc_align(i), b, end;
+        int j, moved;
+
+        b = (lo + align - 1) & ~(align - 1);
+        do {
+                moved = 0;
+                for (j = start; j < pci_prealloc_n; j++) {
+                        if (j == i || !pci_prealloc[j].placed) {
+                                continue;
+                        }
+                        end = pci_prealloc[j].base + ob_pci_prealloc_align(j);
+                        if (b < end && pci_prealloc[j].base < b + align) {
+                                if (end < b) {
+                                        return 0;       /* wrapped */
+                                }
+                                b = (end + align - 1) & ~(align - 1);
+                                moved = 1;
+                        }
+                }
+        } while (moved);
+        if (b < lo || (limit && b + align > limit)) {
+                return 0;
+        }
+        *base = b;
+        return 1;
+}
+
+/* Assign entries start..n-1, already sorted largest first. With *pin*,
+   mac-io goes first at the bottom of the window (Apple's firmware puts it
+   there, and some guests start secondary CPUs through its GPIOs at that
+   fixed address) and the rest fill around it, first fit. Without, each
+   follows the previous one. Returns how many did not fit. */
+static int ob_pci_prealloc_place(int start, unsigned long lo, unsigned long limit,
+                                 int pin, unsigned long *top)
+{
+        int i, pass, lost = 0;
+        unsigned long base, align;
+
+        for (i = start; i < pci_prealloc_n; i++) {
+                pci_prealloc[i].placed = 0;
+        }
+        *top = lo;
+        for (pass = pin ? 0 : 1; pass < 2; pass++) {
+                for (i = start; i < pci_prealloc_n; i++) {
+                        if (!pci_prealloc[i].size ||
+                            (pin && (pass == 0) != pci_prealloc[i].pin)) {
+                                continue;
+                        }
+                        align = ob_pci_prealloc_align(i);
+                        if (pin) {
+                                if (!ob_pci_prealloc_fit(start, i, lo, limit, &base)) {
+                                        lost++;
+                                        continue;
+                                }
+                        } else {
+                                base = (*top + align - 1) & ~(align - 1);
+                                if (limit && base + align > limit) {
+                                        lost++;
+                                        continue;
+                                }
+                        }
+                        pci_prealloc[i].base = base;
+                        pci_prealloc[i].placed = 1;
+                        if (base + align > *top) {
+                                *top = base + align;
+                        }
+                }
+        }
+        return lost;
+}
+
 /* Place the memory BARs of one bus largest first so that big alignments
    do not strand the rest, and nothing lands beyond the host window. */
 static void ob_pci_prealloc_bus(unsigned long *mem_base, int bus)
 {
-        int devnum, fn, nfn, reg, nregs, rom, i, j, cfg, start;
-        uint32_t orig, smask, align;
-        unsigned long limit = ob_pci_mem_limit(), base;
+        int devnum, fn, nfn, reg, nregs, rom, i, j, cfg, start, vid, pin;
+        uint32_t orig, smask;
+        unsigned long limit = ob_pci_mem_limit(), top;
         pci_addr addr;
-        uint8_t ht;
+        uint8_t ht, class, subclass;
 
         start = pci_prealloc_n;
         for (devnum = 0; devnum < 32; devnum++) {
                 nfn = 1;
                 for (fn = 0; fn < nfn; fn++) {
                         addr = PCI_ADDR(bus, devnum, fn);
-                        if (!ob_pci_read_identification(bus, devnum, fn, 0, 0,
-                                                        0, 0)) {
+                        if (!ob_pci_read_identification(bus, devnum, fn, &vid, 0,
+                                                        &class, &subclass)) {
                                 continue;
                         }
+                        pin = vid == 0x106b && class == 0xff && subclass == 0;
                         ht = pci_config_read8(addr, PCI_HEADER_TYPE);
                         if (fn == 0 && (ht & 0x80)) {
                                 nfn = 8;
@@ -1764,6 +1849,9 @@ static void ob_pci_prealloc_bus(unsigned long *mem_base, int bus)
                                 pci_prealloc[pci_prealloc_n].size =
                                         ~(smask & ~0xfu) + 1;
                                 pci_prealloc[pci_prealloc_n].base = 0;
+                                pci_prealloc[pci_prealloc_n].pin =
+                                        pin && reg < nregs;
+                                pci_prealloc[pci_prealloc_n].placed = 0;
                                 pci_prealloc_n++;
                         }
                 }
@@ -1777,23 +1865,24 @@ static void ob_pci_prealloc_bus(unsigned long *mem_base, int bus)
                 pci_prealloc[j + 1] = t;
         }
 
+        /* mac-io first when it leaves room for everything, else as before */
+        pin = 0;
         for (i = start; i < pci_prealloc_n; i++) {
-                align = pci_prealloc[i].size;
-                if (align < (1 << 16)) {
-                        align = 1 << 16;
-                }
-                base = (*mem_base + align - 1) & ~(unsigned long)(align - 1);
-                if (limit && base + align > limit) {
+                pin |= pci_prealloc[i].pin;
+        }
+        if (!pin || ob_pci_prealloc_place(start, *mem_base, limit, 1, &top)) {
+                ob_pci_prealloc_place(start, *mem_base, limit, 0, &top);
+        }
+        for (i = start; i < pci_prealloc_n; i++) {
+                if (pci_prealloc[i].size && !pci_prealloc[i].placed) {
                         printk("PCI: no room for %x byte BAR %x of %d:%d.%d\n",
                                pci_prealloc[i].size, pci_prealloc[i].cfg, bus,
                                (int)((pci_prealloc[i].addr >> 11) & 0x1f),
                                (int)((pci_prealloc[i].addr >> 8) & 7));
                         pci_prealloc[i].size = 0;
-                        continue;
                 }
-                pci_prealloc[i].base = base;
-                *mem_base = base + align;
         }
+        *mem_base = top;
 }
 
 static void ob_pci_configure_bar(pci_addr addr, pci_config_t *config,

@@ -457,7 +457,17 @@ real_entry:
 	 * Bottom
 	 */
 
-	addis	r1, r3, -16		/* ramsize - 1MB */
+	/* The layout above sits at the top of the first 256 MB at most:
+	 * some clients (NetBSD) map only that segment 1:1 while they call
+	 * the firmware. r3 keeps the real size for setup_mmu.
+	 */
+	mr	r4, r3
+	lis	r5, 0x1000		/* 256 MB */
+	cmplw	r4, r5
+	ble	9f
+	mr	r4, r5
+9:
+	addis	r1, r4, -16		/* top - 1MB */
 
 	/* setup hash table */
 
