@@ -133,6 +133,11 @@ variable file-size
 ;
 
 : $load ( devstr len )
+  s" (claim-load-area)" $find if
+    execute
+  else
+    2drop
+  then
   open-dev ( ihandle )
   dup 0= if
     drop
