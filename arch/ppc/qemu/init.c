@@ -868,6 +868,45 @@ id_cpu(void)
     }
 }
 
+#define LOAD_AREA_SIZE 0x800000
+
+static int load_area_claimed;
+
+/* The loaders put the file at load-base */
+static void
+claim_load_area(void)
+{
+    ucell base;
+
+    if (load_area_claimed) {
+        return;
+    }
+    fword("load-base");
+    base = POP();
+    ofmem_claim_phys(base, LOAD_AREA_SIZE, 0);
+    ofmem_claim_virt(base, LOAD_AREA_SIZE, 0);
+    ofmem_map(base, base, LOAD_AREA_SIZE, 0);
+    load_area_claimed = 1;
+}
+
+/* An ELF program runs from its own segments; the area is free for it */
+static void
+release_load_area(void)
+{
+    ucell base;
+
+    if (!load_area_claimed) {
+        return;
+    }
+    fword("load-base");
+    base = POP();
+    if (memcmp((char *)cell2pointer(base), "\177ELF", 4) != 0) {
+        return;
+    }
+    ofmem_release(base, LOAD_AREA_SIZE);
+    load_area_claimed = 0;
+}
+
 static void arch_go(void);
 
 static void
@@ -875,6 +914,8 @@ arch_go(void)
 {
     phandle_t ph;
     xt_t xt;
+
+    release_load_area();
 
     /* Insert copyright property for MacOS 9 and below */
     if (find_dev("/rom/macos")) {
@@ -1119,7 +1160,6 @@ arch_of_init(void)
     char *boot_device, *bootorder_file, *boot_list;
     uint32_t bootorder_sz, sz;
     ofmem_t *ofmem = ofmem_arch_get_private();
-    ucell load_base;
 
     openbios_init();
     modules_init();
@@ -1610,11 +1650,7 @@ arch_of_init(void)
     
     bind_func("platform-boot", boot);
     bind_func("(arch-go)", arch_go);
+    bind_func("(claim-load-area)", claim_load_area);
 
-    /* Allocate 8MB memory at load-base */
-    fword("load-base");
-    load_base = POP();
-    ofmem_claim_phys(load_base, 0x800000, 0);
-    ofmem_claim_virt(load_base, 0x800000, 0);
-    ofmem_map(load_base, load_base, 0x800000, 0);
+    claim_load_area();
 }
