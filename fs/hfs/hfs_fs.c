@@ -225,19 +225,21 @@ static void
 hfs_files_open( hfs_info_t *mi )
 {
 	int fd;
-	char *path = my_args_copy();
+	char *args = my_args_copy();
+	char *path = args;
 
 	const char *s;
 	char buf[256];
 
 	fd = open_ih( my_parent() );
 	if ( fd == -1 ) {
-		free( path );
+		free( args );
 		RET( 0 );
 	}
 
 	mi->vol = hfs_mount(fd, 0);
 	if (!mi->vol) {
+		free(args);
 		RET( 0 );
 	}
 
@@ -246,7 +248,7 @@ hfs_files_open( hfs_info_t *mi )
 
 		/* \\ is an alias for the (blessed) system folder */
 		if( hfs_vstat(mi->vol, &ent) < 0 || hfs_setcwd(mi->vol, ent.blessed) ) {
-			free(path);
+			free(args);
 			RET( -1 );
 		}
 		path += 2;
@@ -256,7 +258,7 @@ hfs_files_open( hfs_info_t *mi )
 
 	mi->common = malloc(sizeof(hfscommon));
 	if (!mi->common) {
-		free(path);
+		free(args);
 		RET( 0 );
 	}
 
@@ -264,7 +266,7 @@ hfs_files_open( hfs_info_t *mi )
 		/* root directory is in fact ":" */
 		mi->common->dir = hfs_opendir(mi->vol, ":");
 		mi->common->type = DIR;
-		free(path);
+		free(args);
 		RET( -1 );
 	}
 
@@ -287,7 +289,7 @@ hfs_files_open( hfs_info_t *mi )
 		buf[n] = 0;
 		if( hfs_chdir(mi->vol, buf) ) {
 			free(mi->common);
-			free(path);
+			free(args);
 			RET( 0 );
 		}
 	}
@@ -305,7 +307,7 @@ hfs_files_open( hfs_info_t *mi )
 
 		if( !(dir=hfs_opendir(mi->vol, buf)) ) {
 			free(mi->common);
-			free(path);
+			free(args);
 			RET( 0 );
 		}
 		hfs_setcwd( mi->vol, oldid );
@@ -320,7 +322,7 @@ hfs_files_open( hfs_info_t *mi )
 			}
 		}
 		hfs_closedir( dir );
-		free(path);
+		free(args);
 		RET( -1 );
 	}
 
@@ -329,15 +331,15 @@ hfs_files_open( hfs_info_t *mi )
 		mi->common->file = hfs_open( mi->vol, s );
 		if (mi->common->file == NULL) {
 			free(mi->common);
-			free(path);
+			free(args);
 			RET( 0 );
 		}
 		mi->common->type = FILE;
-		free(path);
+		free(args);
 		RET( -1 );
 	}
 	mi->common->type = DIR;
-	free(path);
+	free(args);
 	
 	RET( -1 );
 }
