@@ -237,12 +237,13 @@ ob_ide_wait_stat(struct ide_drive *drive, unsigned char ok_stat,
 
 	ob_ide_400ns_delay(drive);
 
-	for (i = 0; i < 5000; i++) {
+	/* poll in short steps: a sector is often ready within microseconds */
+	for (i = 0; i < 500000; i++) {
 		stat = ob_ide_pio_readb(drive, IDEREG_STATUS);
 		if (!(stat & BUSY_STAT))
 			break;
 
-		udelay(1000);
+		udelay(10);
 	}
 
 	if (ret_stat)
