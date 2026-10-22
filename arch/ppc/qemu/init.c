@@ -1072,6 +1072,39 @@ dma_sync(void)
     flush_icache_range(cell2pointer(virt), cell2pointer(virt + size));
 }
 
+/* Boot files tried on each boot device, in order: Mac OS, CHRP boot
+   script, %BOOT, yaboot (Linux), ofwboot (OpenBSD) */
+static const char * const boot_files[] = {
+    "\\\\:tbxi", "\\ppc\\bootinfo.txt", "%BOOT", "\\yaboot", "ofwboot",
+};
+#define NBOOT_FILES (sizeof(boot_files) / sizeof(boot_files[0]))
+
+/* Size of a boot-device list for n devices whose names total len bytes */
+static uint32_t
+boot_list_size(uint32_t n, uint32_t len)
+{
+    uint32_t i, files = 0;
+
+    for (i = 0; i < NBOOT_FILES; i++) {
+        files += strlen(boot_files[i]) + 3;
+    }
+    return len * NBOOT_FILES + n * files + 1;
+}
+
+static void
+boot_list_add(char *list, const char *dev)
+{
+    char *p = list + strlen(list);
+    unsigned int i;
+
+    for (i = 0; i < NBOOT_FILES; i++) {
+        if (p != list) {
+            *p++ = ' ';
+        }
+        p += sprintf(p, "%s:,%s", dev, boot_files[i]);
+    }
+}
+
 void
 arch_of_init(void)
 {
@@ -1083,7 +1116,7 @@ arch_of_init(void)
     char buf[256], qemu_uuid[16];
     const char *stdin_path, *stdout_path, *boot_path;
     uint32_t temp = 0;
-    char *boot_device, *bootorder_file;
+    char *boot_device, *bootorder_file, *boot_list;
     uint32_t bootorder_sz, sz;
     ofmem_t *ofmem = ofmem_arch_get_private();
     ucell load_base;
@@ -1516,32 +1549,27 @@ arch_of_init(void)
                 break;
             }
 
-            snprintf(buf, sizeof(buf),
-                     "%s:,\\\\:tbxi "
-                     "%s:,\\ppc\\bootinfo.txt "
-                     "%s:,%%BOOT",
-                     boot_path, boot_path, boot_path);
+            boot_list = malloc(boot_list_size(1, strlen(boot_path)));
+            boot_list[0] = 0;
+            boot_list_add(boot_list, boot_path);
 
-            push_str(buf);
+            push_str(boot_list);
             fword("encode-string");
             push_str("boot-device");
             fword("property");
+            free(boot_list);
         }
 
         free(boot_device);
     } else {
-        sz = bootorder_sz * (3 * 2);
+        sz = boot_list_size(bootorder_sz + 1, bootorder_sz);
         boot_device = malloc(sz);
         memset(boot_device, 0, sz);
 
         while ((boot_path = strsep(&bootorder_file, "\n")) != NULL) {
-            snprintf(buf, sizeof(buf),
-                     "%s:,\\\\:tbxi "
-                     "%s:,\\ppc\\bootinfo.txt "
-                     "%s:,%%BOOT ",
-                     boot_path, boot_path, boot_path);
-
-            strncat(boot_device, buf, sz);
+            if (*boot_path) {
+                boot_list_add(boot_device, boot_path);
+            }
         }
 
         push_str(boot_device);
