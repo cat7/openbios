@@ -589,6 +589,9 @@ ofmem_init(void)
     ofmem_claim_phys(0, 4 * PAGE_SIZE, 0);
     ofmem_claim_virt(0, 4 * PAGE_SIZE, 0);
 
+    /* Apple firmware maps the exception vectors 1:1 */
+    ofmem_map(0, 0, 3 * PAGE_SIZE, ofmem_arch_default_translation_mode(0));
+
     /* Map OpenBIOS's own memory 1:1, minus the OpenBIOS ROM in RAM copy */
     ofmem_claim_phys(get_ram_top(), get_hash_base() + get_hash_size() - get_ram_top(), 0);
     ofmem_claim_virt(get_ram_top(), get_hash_base() + get_hash_size() - get_ram_top(), 0);
