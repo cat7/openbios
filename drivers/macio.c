@@ -552,6 +552,8 @@ static void macio_gpio_init(const char *path)
     fword("new-device");
     push_str("extint-gpio1");
     fword("device-name");
+    push_str("extint-gpio1");
+    fword("device-type");
     PUSH(0x2f);
     fword("encode-int");
     PUSH(0x1);
