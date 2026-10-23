@@ -2183,6 +2183,30 @@ static void ob_configure_pci_bridge(pci_addr addr,
     }
 
     pci_set_bus_range(config);
+
+#ifdef CONFIG_PPC
+    /* Apple firmware names the windows of a populated bridge 1:1;
+       the host bridge itself has none */
+    if (is_apple() && strchr(config->path + 1, '/')) {
+        u32 props[16];
+        int n = 0;
+
+        if (*mem_base != old_mem_base) {
+            props[n++] = 0x82000000; props[n++] = 0; props[n++] = old_mem_base;
+            props[n++] = 0x82000000; props[n++] = 0; props[n++] = old_mem_base;
+            props[n++] = 0; props[n++] = *mem_base - old_mem_base;
+        }
+        if (*io_base != old_io_base) {
+            props[n++] = 0x81000000; props[n++] = 0; props[n++] = old_io_base;
+            props[n++] = 0x81000000; props[n++] = 0; props[n++] = old_io_base;
+            props[n++] = 0; props[n++] = *io_base - old_io_base;
+        }
+        if (n) {
+            set_property(find_dev(config->path), "ranges", (char *)props,
+                         n * sizeof(props[0]));
+        }
+    }
+#endif
 }
 
 static int ob_pci_read_identification(int bus, int devnum, int fn,
