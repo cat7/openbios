@@ -89,15 +89,29 @@ get_rom_base(void)
     return of_layout_top(ofmem->ramsize) - OF_CODE_SIZE;
 }
 
+/* Base of our own hash table; a client may load SDR1 with its own.
+   Real mode code (our exception handlers) runs only on our own SDR1
+   and cannot reach this variable. */
+static unsigned long of_hash_base;
+
+static inline unsigned long
+get_of_hash_base(void)
+{
+    if (!(mfmsr() & MSR_DR) || !of_hash_base) {
+        return get_hash_base();
+    }
+    return of_hash_base;
+}
+
 static unsigned long
 get_ram_top(void)
 {
-    return get_hash_base() - (32 + 64 + 64) * 1024 - OFMEM_SIZE;
+    return get_of_hash_base() - (32 + 64 + 64) * 1024 - OFMEM_SIZE;
 }
 
 static unsigned long get_heap_top(void)
 {
-    return get_hash_base() - (32 + 64 + 64) * 1024;
+    return get_of_hash_base() - (32 + 64 + 64) * 1024;
 }
 
 static inline size_t ALIGN_SIZE(size_t x, size_t a)
@@ -574,6 +588,9 @@ setup_mmu(unsigned long ramsize)
     ofmem->ramsize = ramsize;
 
     memcpy((void *)get_rom_base(), (void *)OF_CODE_START, OF_CODE_SIZE);
+    /* Store it in the RAM copy, which the MMU maps at OF_CODE_START */
+    *(unsigned long *)((uintptr_t)&of_hash_base - OF_CODE_START +
+                       get_rom_base()) = hash_base;
 
     patch_rfi();
 
@@ -593,9 +610,9 @@ ofmem_init(void)
     ofmem_map(0, 0, 3 * PAGE_SIZE, ofmem_arch_default_translation_mode(0));
 
     /* Map OpenBIOS's own memory 1:1, minus the OpenBIOS ROM in RAM copy */
-    ofmem_claim_phys(get_ram_top(), get_hash_base() + get_hash_size() - get_ram_top(), 0);
-    ofmem_claim_virt(get_ram_top(), get_hash_base() + get_hash_size() - get_ram_top(), 0);
-    ofmem_map(get_ram_top(), get_ram_top(), get_hash_base() + get_hash_size() - get_ram_top(), 0);
+    ofmem_claim_phys(get_ram_top(), get_of_hash_base() + get_hash_size() - get_ram_top(), 0);
+    ofmem_claim_virt(get_ram_top(), get_of_hash_base() + get_hash_size() - get_ram_top(), 0);
+    ofmem_map(get_ram_top(), get_ram_top(), get_of_hash_base() + get_hash_size() - get_ram_top(), 0);
     
     /* Map the OpenBIOS ROM in RAM copy */
     ofmem_claim_phys(get_rom_base(), OF_CODE_SIZE, 0);
