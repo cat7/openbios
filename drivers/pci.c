@@ -1797,7 +1797,7 @@ static void ob_pci_prealloc_bus(unsigned long *mem_base, int bus)
 {
         int devnum, fn, nfn, reg, nregs, rom, i, j, cfg, start, vid, pin;
         uint32_t orig, smask;
-        unsigned long limit = ob_pci_mem_limit(), top;
+        unsigned long limit = ob_pci_mem_limit(), top, top2, base, align;
         pci_addr addr;
         uint8_t ht, class, subclass;
 
@@ -1872,6 +1872,21 @@ static void ob_pci_prealloc_bus(unsigned long *mem_base, int bus)
         }
         if (!pin || ob_pci_prealloc_place(start, *mem_base, limit, 1, &top)) {
                 ob_pci_prealloc_place(start, *mem_base, limit, 0, &top);
+        }
+        /* what the first window could not hold goes to the second, in order */
+        top2 = arch->mem2_base;
+        for (i = start; arch->mem2_len && i < pci_prealloc_n; i++) {
+                if (!pci_prealloc[i].size || pci_prealloc[i].placed) {
+                        continue;
+                }
+                align = ob_pci_prealloc_align(i);
+                base = (top2 + align - 1) & ~(align - 1);
+                if (base + align > arch->mem2_base + arch->mem2_len) {
+                        continue;
+                }
+                pci_prealloc[i].base = base;
+                pci_prealloc[i].placed = 1;
+                top2 = base + align;
         }
         for (i = start; i < pci_prealloc_n; i++) {
                 if (pci_prealloc[i].size && !pci_prealloc[i].placed) {

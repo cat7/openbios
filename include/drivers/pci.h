@@ -32,6 +32,8 @@ struct pci_arch_t {
 	unsigned long host_pci_base; /* offset of PCI memory space within host memory space */
 	unsigned long pci_mem_base; /* in PCI memory space */
 	unsigned long mem_len;
+	unsigned long mem2_base;    /* second memory window, for BARs */
+	unsigned long mem2_len;     /* that do not fit the first */
 	unsigned long io_base;
 	unsigned long io_len;
 	pci_range_t host_ranges[4];
