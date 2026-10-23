@@ -305,7 +305,8 @@ ob_pci_decode_unit(int *idx)
 static void
 ob_pci_encode_unit(int *idx)
 {
-	char buf[28];
+	/* The caller copies the string after we return */
+	static char buf[28];
 	cell hi = POP();
 	cell mid = POP();
 	cell lo = POP();
