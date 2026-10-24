@@ -326,5 +326,11 @@ node_methods_init( const char *cpuname )
 		fword("open-dev");
 		ph = POP();
 		set_int_property(chosen, "mmu", ph);
+
+		/* The boot CPU, the first node of that name */
+		push_str(cpuname);
+		fword("open-dev");
+		ph = POP();
+		set_int_property(chosen, "cpu", ph);
 	}
 }
